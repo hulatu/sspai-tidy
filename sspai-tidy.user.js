@@ -1,12 +1,19 @@
 // ==UserScript==
 // @name         少数派 · 阅读增强
 // @namespace    local.sspai.tidy
-// @version      1.2.0
-// @description  首页与 Matrix 去广告位/推广卡/侧栏，列表拉宽压紧；滚到底自动加载；作者主页默认文章列表并按首页样式重排；文章页读完就结束（清掉充电卡、广告、评论、关联阅读与正文互动条）
+// @version      1.3.0
+// @description  首页与 Matrix 去广告位/推广卡/侧栏，列表拉宽压紧；滚到底自动加载；作者主页默认文章列表并按首页样式重排；文章页读完就结束（清掉充电卡、广告、评论、关联阅读与正文互动条），另加阅读进度条、点图放大、代码块复制与「已读」标记
 // @author       hulatu
+// @homepageURL  https://github.com/hulatu/sspai-tidy
+// @supportURL   https://github.com/hulatu/sspai-tidy/issues
+// @updateURL    https://raw.githubusercontent.com/hulatu/sspai-tidy/main/sspai-tidy.user.js
+// @downloadURL  https://raw.githubusercontent.com/hulatu/sspai-tidy/main/sspai-tidy.user.js
 // @match        https://sspai.com/*
+// @icon         https://sspai.com/favicon.ico
+// @license      MIT
 // @run-at       document-start
 // @grant        none
+// @noframes
 // ==/UserScript==
 
 (function () {
@@ -39,7 +46,13 @@
     hideArticleAd:       true, // 文末广告位（约 398px）
     hideArticleComments: true, // 讨论区（约 237px）
     hideArticleRelated:  true, // 「关联阅读」（约 864px）
-    hideInlineComment:   true  // 正文每个章节末尾的「发表首评 + 表情」互动条（7 处，约 392px）
+    hideInlineComment:   true, // 正文每个章节末尾的「发表首评 + 表情」互动条（7 处，约 392px）
+
+    // ---- 新增：读起来更顺手 ----
+    progressBar:   true,   // 文章页顶部 2px 阅读进度条
+    imageViewer:   true,   // 点正文图片放大，用的是 data-original 里的原图
+    codeCopy:      true,   // 代码块右上角「复制」
+    markRead:      true    // 列表里把读过的文章压暗（记在 localStorage，只存最近 400 篇）
   };
 
   /* ================================================================
@@ -83,6 +96,11 @@ ${CFG.hideInlineComment ? `/* 正文每个章节末尾都插了一条「发表�
 
 @media (min-width: 1000px) {
 /* ---------- 首页：列表占满宽度 ---------- */
+/* 整列外面还套了一层 .feed__wrapper，站点给它写了 max-width: 960px。
+   只改 .feed 的话会被这层卡住（实测 960 / 卡片 904），必须一起放开 */
+.feed__wrapper {
+  max-width: 1120px !important;
+}
 .feed {
   width: 100% !important;
   max-width: 1120px !important;
@@ -391,6 +409,104 @@ ${CFG.userWide ? `
 }
 ` : ''}
 }
+
+/* ================================================================
+   新增：进度条 / 图片放大 / 代码复制 / 已读标记
+   —— 这几块和宽度无关，窄窗口下同样生效
+   ================================================================ */
+
+/* ---------- 阅读进度条 ---------- */
+#sspai-tidy-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 2px;
+  width: 0;
+  background: #e0342b;
+  opacity: 0;
+  z-index: 2147483000;
+  pointer-events: none;
+  transition: width .1s linear, opacity .2s;
+}
+
+/* ---------- 图片放大 ---------- */
+.article__main__content figure.image img {
+  cursor: zoom-in;
+}
+#sspai-tidy-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483001;
+  background: rgba(0, 0, 0, .9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  box-sizing: border-box;
+}
+#sspai-tidy-viewer img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 3px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, .55);
+  cursor: zoom-in;
+}
+#sspai-tidy-viewer.is-zoomed {
+  display: block;
+  overflow: auto;
+}
+#sspai-tidy-viewer.is-zoomed img {
+  max-width: none;
+  max-height: none;
+  margin: 28px auto;
+  cursor: zoom-out;
+}
+#sspai-tidy-viewer .sspai-tidy-viewer__hint {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  color: #fff;
+  opacity: .62;
+  font-size: 12px;
+  letter-spacing: .02em;
+  pointer-events: none;
+}
+
+/* ---------- 代码块复制 ---------- */
+.article__main__content pre {
+  position: relative;
+}
+.sspai-tidy-copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--B8-t);
+  background: rgba(128, 128, 128, .14);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .15s;
+}
+.article__main__content pre:hover .sspai-tidy-copy,
+.sspai-tidy-copy:focus-visible {
+  opacity: 1;
+}
+
+/* ---------- 已读标记 ---------- */
+.sspai-tidy-read {
+  opacity: .48;
+  transition: opacity .15s;
+}
+.sspai-tidy-read:hover {
+  opacity: 1;
+}
 `;
 
   /* ================================================================
@@ -483,16 +599,34 @@ ${CFG.userWide ? `
     // ② 点作者头像进来（SPA 软导航）时补一刀：
     //    找到「动态」下拉里那个隐藏的「文章」项点一下，让路由自己切过去。
     //    它虽然 display:none，但 click 依然会触发路由跳转。
+    // 站点切到「文章」之后，触发按钮上的文案还写着「动态」（下拉里的勾已经移过去了），
+    // 补一刀让标签和内容对上。要在路由渲染之后改，改早了会被重渲染盖回去
+    function syncTabLabel() {
+      if (!/\/posts\/?$/.test(location.pathname)) return;
+      const span = document.querySelector('.custom__tabs .custom__tab__item span');
+      if (span && span.textContent.trim() === '动态') span.textContent = '文章';
+    }
+
     function clickPostsFilter() {
       const items = document.querySelectorAll('.custom__tabs .select__dropdown__item');
       for (const li of items) {
-        if ((li.textContent || '').trim() === '文章') { li.click(); return true; }
+        if ((li.textContent || '').trim() === '文章') {
+          li.click();
+          setTimeout(syncTabLabel, 600);
+          setTimeout(syncTabLabel, 1600);
+          return true;
+        }
       }
       return false;
     }
 
     function fix(tries) {
       tries = tries || 0;
+      // 直接落在 /u/:id/posts（比如刷新页面）时，标签文案也补一下
+      if (RE_POST.test(location.pathname)) {
+        setTimeout(syncTabLabel, 600);
+        return;
+      }
       const m = location.pathname.match(RE_ROOT) || location.pathname.match(RE_UPD);
       if (!m) return;
       if (seen.has(m[1])) return;                 // 用户自己点过「动态」，别抢
@@ -521,5 +655,199 @@ ${CFG.userWide ? `
       };
     }
     schedule();
+  }
+
+  /* ================================================================
+     读起来更顺手：进度条 / 图片放大 / 代码复制 / 已读标记
+     —— 站点是 SPA，这几块都用事件委托或「补挂」的方式，
+        软导航之后不需要重新初始化
+     ================================================================ */
+  const isPostPage = () => /^\/post\/\d+/.test(location.pathname);
+  const postIdOf = (href) => {
+    const m = String(href || '').match(/^\/post\/(\d+)/);
+    return m ? m[1] : null;
+  };
+
+  /* ---------- 阅读进度条 ---------- */
+  if (CFG.progressBar) {
+    const bar = document.createElement('div');
+    bar.id = 'sspai-tidy-progress';
+    whenDom(() => document.documentElement.appendChild(bar));
+
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      if (!isPostPage()) {
+        bar.style.opacity = '0';
+        bar.style.width = '0';
+        return;
+      }
+      const el = document.documentElement;
+      const max = el.scrollHeight - el.clientHeight;
+      const p = max > 0 ? Math.min(1, Math.max(0, el.scrollTop / max)) : 0;
+      bar.style.width = (p * 100).toFixed(2) + '%';
+      bar.style.opacity = '1';
+    };
+    const kick = () => { if (!raf) raf = requestAnimationFrame(update); };
+
+    addEventListener('scroll', kick, { passive: true });
+    addEventListener('resize', kick, { passive: true });
+    // 图片陆续加载完时页面高度会变，隔一会儿重算一次
+    whenDom(() => { update(); setInterval(update, 2000); });
+  }
+
+  /* ---------- 点图放大 ---------- */
+  if (CFG.imageViewer) {
+    const VIEWER_ID = 'sspai-tidy-viewer';
+    let viewer = null;
+
+    const closeViewer = () => {
+      if (!viewer) return;
+      viewer.remove();
+      viewer = null;
+      document.documentElement.style.overflow = '';
+    };
+
+    const openViewer = (img) => {
+      // 站点把原图地址放在 data-original 里，正文那张是 1120px 的压缩版
+      const src = img.getAttribute('data-original') || img.currentSrc || img.src;
+      if (!src) return;
+      closeViewer();
+
+      viewer = document.createElement('div');
+      viewer.id = VIEWER_ID;
+
+      const big = document.createElement('img');
+      big.src = src;
+      big.alt = img.alt || '';
+
+      const hint = document.createElement('div');
+      hint.className = 'sspai-tidy-viewer__hint';
+      hint.textContent = '点击图片切换原始大小 · Esc 或点空白关闭';
+
+      viewer.append(big, hint);
+      viewer.addEventListener('click', (e) => {
+        if (e.target === big) viewer.classList.toggle('is-zoomed');
+        else closeViewer();
+      });
+
+      document.documentElement.appendChild(viewer);
+      document.documentElement.style.overflow = 'hidden';
+    };
+
+    // 用捕获阶段，免得站点自己的点击处理先跑
+    document.addEventListener('click', (e) => {
+      const img = e.target;
+      if (!(img instanceof HTMLImageElement)) return;
+      if (!img.closest('.article__main__content')) return;
+      if (img.closest('a')) return;          // 图包在链接里时让链接自己走
+      e.preventDefault();
+      openViewer(img);
+    }, true);
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeViewer();
+    });
+  }
+
+  /* ---------- 已读标记 ---------- */
+  const READ_KEY = 'sspai-tidy:read';
+
+  const readSet = () => {
+    try {
+      const v = JSON.parse(localStorage.getItem(READ_KEY) || '[]');
+      return new Set(Array.isArray(v) ? v : []);
+    } catch (e) { return new Set(); }
+  };
+
+  const rememberRead = (id) => {
+    if (!id) return;
+    try {
+      const s = readSet();
+      if (s.has(id)) return;
+      s.add(id);
+      localStorage.setItem(READ_KEY, JSON.stringify([...s].slice(-400)));
+    } catch (e) { /* 隐私模式下 localStorage 会抛，忽略 */ }
+  };
+
+  if (CFG.markRead) {
+    rememberRead(postIdOf(location.pathname));
+
+    const paint = () => {
+      const ids = readSet();
+      if (!ids.size) return;
+      for (const a of document.querySelectorAll('a[href^="/post/"]')) {
+        const id = postIdOf(a.getAttribute('href'));
+        if (!id || !ids.has(id)) continue;
+        const card = a.closest('.article__card, .post-item, .user__update__item__wrapper');
+        if (card) card.classList.add('sspai-tidy-read');
+      }
+    };
+
+    let pt = 0;
+    const kickPaint = () => { clearTimeout(pt); pt = setTimeout(paint, 400); };
+
+    whenDom(() => {
+      paint();
+      new MutationObserver(kickPaint).observe(document.body, { childList: true, subtree: true });
+    });
+
+    // 软导航到文章页时也记一笔（列表是异步渲染的，靠 MutationObserver 补画）
+    let lastPath = location.pathname;
+    setInterval(() => {
+      if (location.pathname === lastPath) return;
+      lastPath = location.pathname;
+      rememberRead(postIdOf(lastPath));
+    }, 800);
+  }
+
+  /* ---------- 代码块复制 ---------- */
+  if (CFG.codeCopy) {
+    const copyText = (text, btn) => {
+      const done = () => {
+        btn.textContent = '已复制';
+        setTimeout(() => { btn.textContent = '复制'; }, 1400);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, done);
+        return;
+      }
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      ta.remove();
+      done();
+    };
+
+    const attachCopy = () => {
+      for (const pre of document.querySelectorAll('.article__main__content pre')) {
+        if (pre.querySelector('.sspai-tidy-copy')) continue;
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'sspai-tidy-copy';
+        btn.textContent = '复制';
+        btn.addEventListener('click', () => {
+          // 复制前先把按钮自己摘掉，否则会把「复制」两个字一起复制进去
+          const clone = pre.cloneNode(true);
+          const self = clone.querySelector('.sspai-tidy-copy');
+          if (self) self.remove();
+          copyText(clone.textContent.replace(/\s+$/, ''), btn);
+        });
+
+        pre.appendChild(btn);
+      }
+    };
+
+    let ct = 0;
+    const kickCopy = () => { clearTimeout(ct); ct = setTimeout(attachCopy, 300); };
+
+    whenDom(() => {
+      attachCopy();
+      new MutationObserver(kickCopy).observe(document.body, { childList: true, subtree: true });
+    });
   }
 })();
