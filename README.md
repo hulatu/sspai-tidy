@@ -4,7 +4,7 @@
 
 **一个 Tampermonkey 用户脚本，把 [sspai.com](https://sspai.com) 改成一个只用来读东西的地方。**
 
-[![version](https://img.shields.io/badge/version-1.4.2-1b1917?style=flat-square)](sspai-tidy.user.js)
+[![version](https://img.shields.io/badge/version-1.5.0-1b1917?style=flat-square)](sspai-tidy.user.js)
 [![platform](https://img.shields.io/static/v1?label=%E5%B9%B3%E5%8F%B0&message=sspai.com&color=d71a1b&style=flat-square)](https://sspai.com)
 [![userscript](https://img.shields.io/static/v1?label=%E7%B1%BB%E5%9E%8B&message=UserScript&color=2f7d5d&style=flat-square)](https://www.tampermonkey.net/)
 [![license](https://img.shields.io/static/v1?label=%E8%AE%B8%E5%8F%AF&message=MIT&color=1b1917&style=flat-square)](LICENSE)
@@ -98,7 +98,7 @@
 | 按钮 | 做什么 |
 | --- | --- |
 | 进度环 `37` | 显示当前读到百分之多少，点一下回顶部 |
-| ☰ 目录 | 只在文章页出现，展开小节列表，点哪节跳哪节 |
+| ☰ 目录 | 只在文章页出现，点一下打开少数派自己的目录 |
 | ⌄ 到底部 | 滚到文末；图片懒加载会把页面撑长，停稳后会补一次 |
 
 ![右下角控制条](screenshots/dock.png)
@@ -109,9 +109,10 @@
 
 几处刻意的做法：
 
-- **上一节 / 下一节放在目录面板的标题栏**，没做成两个独立按钮。它们只在「知道自己在第几节」时才有意义，而那正是目录在管的事；单独摆到控制条上只会变成两个需要猜的图标。
+- **目录不自己画，直接开站点原生的那套**。少数派本来就有目录：≥1280px 是正文右侧那条虚线轨（悬停展开、点图钉钉住），<1280px 是底部弹出的「文章目录」弹层。控制条那个 ☰ 只是把站点自己的目录打开 —— 宽屏等于替你点了图钉，窄屏等于给它弹层加上那两个 class。列表、当前节高亮、点击跳转全是站点的，一个像素都不用抄。
+- **钉住之后要自己补 `.visible`**：站点的逻辑是「滚下去才有目录」，回到顶部就把 `.visible` 摘了。钉住期间被摘掉会立刻按回去（挂在 overlay 上的 MutationObserver 干这个），否则目录会莫名其妙消失。
+- **开合状态读 DOM，不另存一份**。图钉是 Vue 管的，重渲染会按它自己的状态重写 class，我们另存一个布尔量迟早会对不上。所以每次动手前先确认节点还挂在文档上（`isConnected`），再直接读 `pinned` / `is-dialog-open`。
 - **控制条要躲开底部那条「说点什么…」**：它是 fixed、56px 高，控制条在文章页抬到 84px；站点自己下滑收起它时会加 `.translate`，控制条跟着落回 24px。
-- **目录按节点身份判断要不要重建**：正文是分批渲染的，第一屏只有前几个标题；站点重渲染时整棵节点还会被换掉，旧节点量出来的坐标全是 0 —— 表现是「点了没反应」，而且不报错。所以比的是节点本身，不是标题文字。
 - **深色下高亮换成亮一档的红**：站点自己的 `--brand` 在深色里仍是 `#da282a`，压在 `#232326` 上只有 3.4:1。
 
 ### 🫥 下滑收起导航
@@ -172,7 +173,7 @@ const CFG = {
 
   // ---- 控制条 + 沉浸阅读（1.4 新增）----
   pageDock:      true,   // 右下角控制条（进度环 / 目录 / 到底部）
-  dockToc:       true,   // 控制条里的「目录」，只在文章页出现
+  dockToc:       true,   // 控制条里的「目录」，只在文章页出现；点一下打开少数派原生目录
   immersive:     true    // 文章页下滑收起顶部导航
 };
 ```

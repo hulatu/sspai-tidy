@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         少数派 · 阅读增强
 // @namespace    local.sspai.tidy
-// @version      1.4.2
-// @description  首页与 Matrix 去广告位/推广卡/侧栏，列表拉宽压紧；滚到底自动加载；作者主页默认文章列表并按首页样式重排；文章页读完就结束（清掉充电卡、广告、评论、关联阅读与正文互动条）；阅读进度、点图放大、代码块复制、已读标记；右下角控制条（进度 / 目录跳转 / 到底部），文章页下滑自动收起顶部导航
+// @version      1.5.0
+// @description  首页与 Matrix 去广告位/推广卡/侧栏，列表拉宽压紧；滚到底自动加载；作者主页默认文章列表并按首页样式重排；文章页读完就结束（清掉充电卡、广告、评论、关联阅读与正文互动条）；阅读进度、点图放大、代码块复制、已读标记；右下角控制条（进度 / 目录 / 到底部，目录直接用少数派自己的），文章页下滑自动收起顶部导航
 // @author       hulatu
 // @homepageURL  https://github.com/hulatu/sspai-tidy
 // @supportURL   https://github.com/hulatu/sspai-tidy/issues
@@ -56,7 +56,7 @@
 
     // ---- 右下角控制条 + 沉浸阅读 ----
     pageDock:      true,   // 右下角控制条：阅读进度环（点=回顶部）/ 目录 / 到底部
-    dockToc:       true,   // 控制条里的「目录」按钮，只出现在文章页，可逐节跳转
+    dockToc:       true,   // 控制条里的「目录」按钮，只出现在文章页；点一下钉住少数派自己的右侧目录
     immersive:     true    // 文章页下滑时收起顶部导航和「打开 App」按钮，上滑再出来
   };
 
@@ -89,6 +89,7 @@
      右下角控制条
      —— 站点原来那条角标工具条（客服 + 返回顶部）在 pageDock 打开时整条隐藏，
         位置让给这里：进度环（点一下回顶部）/ 目录 / 到底部
+     —— 目录不再自己画一套，点一下就是把少数派原生的右侧目录钉住（见下面的 JS）
      —— 文章页底部那条「说点什么…」是 fixed 56px 高，控制条要抬起来让开；
         它随下滑收起时（站点自己会给它加 .translate）控制条再落回底部
      ================================================================ */
@@ -96,14 +97,10 @@
 /* 站点自己的角标工具条：客服 + 返回顶部，这里两样都由控制条接管 */
 .app_toolbar { display: none !important; }
 
-#sspai-tidy-dock,
-#sspai-tidy-toc {
+#sspai-tidy-dock {
   font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   color: var(--B8-t, #000);
   -webkit-tap-highlight-color: transparent;
-}
-
-#sspai-tidy-dock {
   position: fixed;
   right: 20px;
   bottom: 24px;
@@ -117,8 +114,7 @@
 body:has(.article__bar__wrapper) #sspai-tidy-dock { bottom: 84px; }
 body:has(.article__bar__wrapper.translate) #sspai-tidy-dock { bottom: 24px; }
 
-#sspai-tidy-dock button,
-#sspai-tidy-toc button {
+#sspai-tidy-dock button {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
@@ -128,8 +124,7 @@ body:has(.article__bar__wrapper.translate) #sspai-tidy-dock { bottom: 24px; }
   -webkit-appearance: none;
   appearance: none;
 }
-#sspai-tidy-dock button:focus-visible,
-#sspai-tidy-toc button:focus-visible {
+#sspai-tidy-dock button:focus-visible {
   outline: 2px solid var(--brand, #da282a);
   outline-offset: 2px;
 }
@@ -193,115 +188,14 @@ html.theme-dark #sspai-tidy-dock .std-ring-fg { stroke: #ff6b63; }
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- 目录弹层 ---------- */
-#sspai-tidy-toc {
-  position: fixed;
-  right: 68px;
-  bottom: 24px;
-  z-index: 900;
-  width: 252px;
-  max-height: min(62vh, 560px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid rgba(0, 0, 0, .08);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, .95);
-  -webkit-backdrop-filter: blur(18px) saturate(1.6);
-  backdrop-filter: blur(18px) saturate(1.6);
-  box-shadow: 0 10px 34px rgba(0, 0, 0, .14);
-  transition: bottom .25s var(--a-func-short, cubic-bezier(0, 0, 0, 1));
-}
-#sspai-tidy-toc[hidden] { display: none !important; }
-body:has(.article__bar__wrapper) #sspai-tidy-toc { bottom: 84px; }
-body:has(.article__bar__wrapper.translate) #sspai-tidy-toc { bottom: 24px; }
-
-html.theme-dark #sspai-tidy-toc {
-  border-color: rgba(255, 255, 255, .1);
-  background: rgba(35, 35, 38, .96);
-  box-shadow: 0 10px 34px rgba(0, 0, 0, .5);
-}
-
-#sspai-tidy-toc .std-toc-head {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 8px 8px 14px;
-  border-bottom: 1px solid rgba(128, 128, 128, .16);
-}
-#sspai-tidy-toc .std-toc-title {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: .04em;
-}
-#sspai-tidy-toc .std-toc-nav {
-  margin-left: auto;
-  display: flex;
-  gap: 4px;
-}
-#sspai-tidy-toc .std-toc-nav button {
-  width: 24px;
-  height: 24px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  color: var(--B6-t, #666);
-  transition: background .16s ease, color .16s ease;
-}
-#sspai-tidy-toc .std-toc-nav button:hover {
-  background: rgba(128, 128, 128, .16);
-  color: var(--B8-t, #000);
-}
-#sspai-tidy-toc .std-toc-nav svg { width: 14px; height: 14px; }
-
-#sspai-tidy-toc .std-toc-list {
-  position: relative;
-  flex: 1 1 auto;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  scrollbar-width: thin;
-}
-#sspai-tidy-toc .std-toc-item {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--B6-t, #555);
-  font-size: 12.5px;
-  line-height: 1.45;
-  text-align: left;
-  transition: background .16s ease, color .16s ease;
-}
-#sspai-tidy-toc .std-toc-item.std-lv3 {
-  padding-left: 20px;
-  font-size: 12px;
-}
-#sspai-tidy-toc .std-toc-item:hover {
-  background: rgba(128, 128, 128, .14);
-  color: var(--B8-t, #000);
-}
-#sspai-tidy-toc .std-toc-item.is-active {
-  background: rgba(218, 40, 42, .08);
+/* 目录被钉住时按钮亮一下，提醒「再点一下收起」 */
+#sspai-tidy-dock > button.is-on {
   color: var(--brand, #da282a);
-  font-weight: 600;
+  border-color: rgba(218, 40, 42, .32);
 }
-/* 深色下站点自己的 --brand 还是 #da282a，压在 #232326 上只有 3.4:1，换一档亮的 */
-html.theme-dark #sspai-tidy-toc .std-toc-item.is-active {
-  background: rgba(255, 107, 99, .14);
+html.theme-dark #sspai-tidy-dock > button.is-on {
   color: #ff6b63;
+  border-color: rgba(255, 107, 99, .4);
 }
 `;
 
@@ -819,18 +713,18 @@ ${CFG.immersive ? IMMERSIVE_CSS : ''}
   /* ================================================================
      右下角控制条 + 文章页沉浸阅读
      —— 控制条：进度环（点=回顶部）/ 目录 / 到底部
+     —— 目录用少数派自己那套：≥1280px 是右侧那条虚线轨（悬停展开、图钉钉住），
+        <1280px 是站点自己的底部弹层。这里只负责把它打开，不再画第二套面板
      —— 沉浸阅读：文章页下滑收起顶部导航，上滑再出来
      ================================================================ */
   if (CFG.pageDock || CFG.immersive) {
     const isArticle = () => /^\/post\/\d+/.test(location.pathname);
-    const CIR = 2 * Math.PI * 16;          // 进度环周长（r = 16）
+    const CIR = 2 * Math.PI * 16;                            // 进度环周长（r = 16）
+    const WIDE = window.matchMedia('(min-width: 1280px)');   // 站点切两套目录的分界线
 
     let dock = null, ringFg = null, ringNum = null, tocBtn = null;
-    let tocPanel = null, tocList = null;
-    let headings = [];                     // 文章小节（h2 / h3 的 DOM）
-    let tops = [];                         // 各小节相对文档的纵坐标
-    let topsAt = 0;
-    let active = -1;                       // 当前所在小节
+    let dir = null;                        // 原生目录：{ ov, wrap, list }
+    let docBound = false;                  // 站点重建 body 时别把 document 上的监听叠成好几层
     let headerHidden = false;
     let lastY = window.scrollY;
     let lockUntil = 0;                     // 程序化跳转期间别收导航（否则落点会空出一条）
@@ -868,29 +762,22 @@ ${CFG.immersive ? IMMERSIVE_CSS : ''}
       ringNum = dock.querySelector('.std-num');
       tocBtn  = dock.querySelector('[data-act="toc"]');
 
-      tocPanel = document.createElement('div');
-      tocPanel.id = 'sspai-tidy-toc';
-      tocPanel.hidden = true;
-      tocPanel.innerHTML =
-        `<div class="std-toc-head">` +
-          `<span class="std-toc-title">目录</span>` +
-          `<div class="std-toc-nav">` +
-            `<button type="button" data-act="prev" title="上一节" aria-label="上一节">` +
-              icon('<path d="M6 12.5l4-4 4 4"/>') + `</button>` +
-            `<button type="button" data-act="next" title="下一节" aria-label="下一节">` +
-              icon('<path d="M6 8l4 4 4-4"/>') + `</button>` +
-          `</div>` +
-        `</div>` +
-        `<div class="std-toc-list"></div>`;
-      document.body.appendChild(tocPanel);
-      tocList = tocPanel.querySelector('.std-toc-list');
-
       dock.addEventListener('click', onClick);
-      tocPanel.addEventListener('click', onClick);
       // 别让点按冒到站点那边（会关掉它自己的下拉、触发全局监听）
-      for (const el of [dock, tocPanel]) {
-        el.addEventListener('pointerdown', e => e.stopPropagation());
-        el.addEventListener('mousedown', e => e.stopPropagation());
+      dock.addEventListener('pointerdown', e => e.stopPropagation());
+      dock.addEventListener('mousedown', e => e.stopPropagation());
+
+      // 窄屏弹层里站点自带的关闭按钮 / 点遮罩 / 点完某一节，都得跟着把状态改回来
+      if (!docBound) {
+        docBound = true;
+        document.addEventListener('click', e => {
+          if (!dir) return;
+          const inDialog = dir.ov.classList.contains('is-dialog');
+          if (e.target.closest('.comp__Directory__overlay .btn__close')) closeDir();
+          else if (e.target === dir.ov && dir.ov.classList.contains('is-dialog-open')) closeDir();
+          // 窄屏是弹层，跳完就该收起来；宽屏是钉住的，跳完留着
+          else if (inDialog && e.target.closest('.article__directory')) closeDir();
+        }, true);
       }
     }
 
@@ -901,12 +788,9 @@ ${CFG.immersive ? IMMERSIVE_CSS : ''}
       e.preventDefault();
       e.stopPropagation();
       const act = btn.dataset.act;
-      if (act === 'top') { closeToc(); scrollToY(0); }
-      else if (act === 'bottom') { closeToc(); toBottom(); }
-      else if (act === 'toc') toggleToc();
-      else if (act === 'prev') step(-1);
-      else if (act === 'next') step(1);
-      else if (act === 'goto') { jumpTo(+btn.dataset.i); closeToc(); }
+      if (act === 'top') scrollToY(0);
+      else if (act === 'bottom') toBottom();
+      else if (act === 'toc') toggleDir();
     }
 
     // 图片懒加载会在滚动途中把页面撑长，一次平滑滚动常常差几十像素到不了底。
@@ -932,142 +816,123 @@ ${CFG.immersive ? IMMERSIVE_CSS : ''}
       return document.documentElement.scrollHeight - window.innerHeight;
     }
 
-    // 顶部导航占 56px，跳转时留 16px 呼吸；导航收起后就不用留了
-    function offset() { return headerHidden ? 16 : 72; }
-
-    function jumpTo(i) {
-      if (i < 0) return;
-      // 目标节点可能已经被站点换掉了（软导航 / 重渲染），先对一次再量
-      if (!headings[i] || !headings[i].isConnected) {
-        buildToc();
-        if (!headings[i]) return;
-      }
-      const y = headings[i].getBoundingClientRect().top + window.scrollY - offset();
-      scrollToY(y);
+    /* ---------- 少数派原生目录 ----------
+       宽屏：overlay 有 .visible 才可见，wrapper 有 .pinned 才展开。
+             .pinned 是站点自己的图钉状态（Vue 管着，重渲染会按它的状态重写），
+             所以这里直接点它那个图钉按钮，让站点自己记状态，不去改 class
+       窄屏：overlay 平时 display:none，加 .is-dialog.is-dialog-open 就是站点自己的弹层
+       .visible 只有滚动之后站点才加，所以顶部打开时得自己补 */
+    function findDir() {
+      const ov = document.querySelector('.comp__Directory__overlay');
+      if (!ov) return null;
+      const wrap = ov.querySelector('.comp__Directory__wrapper');
+      const list = ov.querySelector('.article__directory');
+      return wrap && list ? { ov, wrap, list } : null;
     }
 
-    function step(dir) {
-      if (!headings.length) return;
-      ensureTops(true);
-      const y = window.scrollY;
-      let idx = -1;
-      for (let i = 0; i < tops.length; i++) if (tops[i] - offset() - 4 <= y) idx = i;
+    // 两套界面各自算「开着」：宽屏看钉住，窄屏看弹层。
+    // 别把另一套的残留状态算进来（窗口从宽拖到窄时 pinned 还挂着）
+    const dirOpen = () => {
+      if (!dir || !dir.ov.isConnected) return false;
+      return WIDE.matches
+        ? dir.wrap.classList.contains('pinned')
+        : dir.ov.classList.contains('is-dialog-open');
+    };
 
-      if (dir > 0) {
-        if (idx + 1 >= headings.length) toBottom();
-        else jumpTo(idx + 1);
-      } else if (idx < 0) {
-        scrollToY(0);
-      } else if (y - (tops[idx] - offset()) > 48) {
-        jumpTo(idx);                       // 先回到本节开头
-      } else if (idx === 0) {
-        scrollToY(0);
+    const pinBtn = () => dir && dir.ov.querySelector('.article__directory__pin');
+
+    // 站点重渲染会把整棵目录节点换掉，手上这份就成了游离节点：
+    // 读它的 class 永远是旧值，操作它也没反应。动之前先确认还挂在文档上
+    function ensureDir() {
+      if (!dir || !dir.ov.isConnected || !dir.wrap.isConnected) refreshDir();
+    }
+
+    function openDir() {
+      ensureDir();
+      if (!dir) return;
+      if (WIDE.matches) {
+        dir.ov.classList.add('visible');
+        if (!dir.wrap.classList.contains('pinned')) {
+          const pin = pinBtn();
+          if (pin) pin.click(); else dir.wrap.classList.add('pinned');
+        }
       } else {
-        jumpTo(idx - 1);
+        dir.ov.classList.add('is-dialog', 'is-dialog-open');
       }
+      // 等站点（Vue 的 nextTick）把 class 写回来再对按钮状态
+      setTimeout(syncTocBtn, 0);
     }
 
-    function toggleToc() {
-      if (!tocPanel || tocBtn.hidden) return;
-      if (tocPanel.hidden) {
-        ensureTops(true);
-        updateActive();
-        tocPanel.hidden = false;
-      } else {
-        closeToc();
+    function closeDir() {
+      ensureDir();
+      if (!dir) return;
+      if (dir.wrap.classList.contains('pinned')) {
+        const pin = pinBtn();
+        if (pin) pin.click(); else dir.wrap.classList.remove('pinned');
       }
+      if (dir.ov.classList.contains('is-dialog')) {
+        dir.ov.classList.remove('is-dialog-open');
+        // 等站点那条 translateY 收完再摘 dialog，否则会先闪成桌面样式
+        setTimeout(() => {
+          if (dir && !dir.wrap.classList.contains('pinned')) dir.ov.classList.remove('is-dialog');
+        }, 320);
+      }
+      setTimeout(() => {
+        // 页面顶部时把 visible 还给站点原本的状态，别在顶上留一条轨
+        if (dir && !dir.wrap.classList.contains('pinned') && window.scrollY < 100) {
+          dir.ov.classList.remove('visible');
+        }
+        syncTocBtn();
+      }, 0);
     }
 
-    function closeToc() { if (tocPanel) tocPanel.hidden = true; }
-
-    /* ---------- 目录内容 ---------- */
-    function collectHeads() {
-      return isArticle()
-        ? [...document.querySelectorAll('.article__main__content h2, .article__main__content h3')]
-            .filter(h => (h.textContent || '').trim())
-        : [];
+    function toggleDir() {
+      ensureDir();                     // 先确认手上这份节点还活着，再读它的开合状态
+      if (!dir) return;
+      dirOpen() ? closeDir() : openDir();
     }
 
-    function buildToc(found) {
-      const art = isArticle();
-      const list = found || collectHeads();
+    function syncTocBtn() {
+      if (tocBtn) tocBtn.classList.toggle('is-on', dirOpen());
+    }
 
-      // 站点重渲染正文的那一瞬间会查不到标题，这时别把手上这份目录抹掉
-      if (art && !list.length && headings.length) return;
+    // 目录列表是站点渲染的，软导航 / 分批渲染都会晚到，隔一会儿对一次
+    function refreshDir() {
+      dir = findDir();
+      const has = !!dir && !!dir.list.querySelector('li');
+      if (tocBtn) tocBtn.hidden = !(CFG.dockToc && isArticle() && has);
+      syncTocBtn();
+      watchDir();
+    }
 
-      headings = list;
-      tops = [];
-      topsAt = 0;
-
-      const ok = CFG.dockToc && headings.length > 0;
-      if (tocBtn) tocBtn.hidden = !ok;
-      if (!ok) {
-        if (tocList) tocList.textContent = '';
-        closeToc();
-        return;
-      }
-
-      tocList.textContent = '';
-      headings.forEach((h, i) => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'std-toc-item std-lv' + (h.tagName === 'H3' ? 3 : 2);
-        b.dataset.act = 'goto';
-        b.dataset.i = String(i);
-        b.textContent = (h.textContent || '').trim().replace(/\s+/g, ' ');
-        tocList.appendChild(b);
+    // 站点在回到顶部时会把 .visible 摘掉（它的逻辑是「滚下去才有目录」）。
+    // 钉住期间被摘掉就立刻按回去，否则目录会莫名消失
+    let dirObs = null, dirObsOv = null, dirObsWrap = null, readdAt = 0;
+    function watchDir() {
+      if (!dir || (dirObsOv === dir.ov && dirObsWrap === dir.wrap)) return;
+      if (dirObs) dirObs.disconnect();
+      dirObsOv = dir.ov;
+      dirObsWrap = dir.wrap;
+      dirObs = new MutationObserver(() => {
+        if (!dir) return;
+        syncTocBtn();
+        if (!dir.wrap.classList.contains('pinned')) return;
+        if (dir.ov.classList.contains('visible')) return;
+        const now = Date.now();
+        if (now - readdAt < 200) return;          // 别和站点来回抢
+        readdAt = now;
+        dir.ov.classList.add('visible');
       });
+      dirObs.observe(dir.ov, { attributes: true, attributeFilter: ['class'] });
+      dirObs.observe(dir.wrap, { attributes: true, attributeFilter: ['class'] });
     }
 
-    // 正文是分批渲染的：第一屏只有前几个标题，后面几节晚到；
-    // 站点重渲染时整棵节点还会换掉（旧节点被摘走，量出来的坐标全是 0）。
-    // 所以按「节点身份」判断要不要重建，光比文字不够
-    function refreshToc() {
-      if (!dock) return;
-      const now = collectHeads();
-      if (now.length === headings.length && now.every((el, i) => el === headings[i])) return;
-      buildToc(now);
-      updateActive();
-    }
-
-    function ensureTops(force) {
-      const now = Date.now();
-      if (!force && tops.length === headings.length && now - topsAt < 1200) return;
-      if (!headings.every(h => h.isConnected)) buildToc();   // 节点被换掉了，重取
-      tops = headings.map(h => h.getBoundingClientRect().top + window.scrollY);
-      topsAt = now;
-    }
-
-    /* ---------- 进度 / 当前小节 ---------- */
+    /* ---------- 进度 ---------- */
     function updateProgress() {
       const max = document.documentElement.scrollHeight - window.innerHeight;
       const p = max > 8 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
       if (ringFg) ringFg.setAttribute('stroke-dashoffset', (CIR * (1 - p)).toFixed(2));
       if (ringNum) ringNum.textContent = String(Math.round(p * 100));
-    }
-
-    function markActive(i) {
-      if (i === active) return;
-      active = i;
-      if (!tocList) return;
-      const items = tocList.children;
-      for (let k = 0; k < items.length; k++) items[k].classList.toggle('is-active', k === i);
-      const it = items[i];
-      if (tocPanel.hidden || !it) return;
-      // 打开着的时候把当前项滚进可视区（只滚列表，不动页面）
-      const top = it.offsetTop, h = it.offsetHeight;
-      const view = tocList.scrollTop, hh = tocList.clientHeight;
-      if (top < view) tocList.scrollTop = top - 8;
-      else if (top + h > view + hh) tocList.scrollTop = top + h - hh + 8;
-    }
-
-    function updateActive() {
-      if (!headings.length) { markActive(-1); return; }
-      ensureTops();
-      const y = window.scrollY + offset() + 8;
-      let idx = -1;
-      for (let i = 0; i < tops.length; i++) if (tops[i] <= y) idx = i;
-      markActive(idx);
     }
 
     /* ---------- 沉浸阅读 ---------- */
@@ -1087,7 +952,10 @@ ${CFG.immersive ? IMMERSIVE_CSS : ''}
         const dy = y - lastY;
         lastY = y;
         updateProgress();
-        updateActive();
+        // 钉住期间站点会把 .visible 撤掉（它认为只在滚动后才需要目录），这里补回来
+        if (dir && dir.wrap.classList.contains('pinned') && !dir.ov.classList.contains('visible')) {
+          dir.ov.classList.add('visible');
+        }
         if (!CFG.immersive || !isArticle() || Date.now() < lockUntil) return;
         // 顶部永远露出来；下滑一段就收起，稍微上滑就回来
         if (y < 80) setHeader(false);
@@ -1100,11 +968,9 @@ ${CFG.immersive ? IMMERSIVE_CSS : ''}
     function sync() {
       setHeader(false);
       lastY = window.scrollY;
-      active = -1;
       if (!dock) return;
-      buildToc();
+      refreshDir();
       updateProgress();
-      updateActive();
     }
 
     whenDom(() => {
@@ -1112,7 +978,7 @@ ${CFG.immersive ? IMMERSIVE_CSS : ''}
       sync();
 
       window.addEventListener('scroll', onScroll, { passive: true });
-      window.addEventListener('resize', () => { topsAt = 0; updateProgress(); updateActive(); });
+      window.addEventListener('resize', () => { updateProgress(); refreshDir(); });
 
       // 软导航后 DOM 是慢慢换的，等一下再重算；
       // 站点自己也会 replaceState（换 query、写滚动位置），那不算换页
@@ -1122,23 +988,19 @@ ${CFG.immersive ? IMMERSIVE_CSS : ''}
         const p = location.pathname + location.search;
         if (p === lastPath) return;
         lastPath = p;
+        closeDir();                        // 换页把目录收掉，别跟着漂到下一篇
         clearTimeout(rt);
         rt = setTimeout(sync, 300);
       });
 
-      // 正文分批渲染，标题可能晚到；用 observer 兜住，合并成 500ms 一次
-      let moTimer = null;
-      new MutationObserver(() => {
-        clearTimeout(moTimer);
-        moTimer = setTimeout(refreshToc, 500);
-      }).observe(document.documentElement, { childList: true, subtree: true });
-
-      // body 被站点整块重建时把自己接回来
+      // 目录列表 / body 都可能被站点整块重建，隔 2s 对一次
       setInterval(() => {
         if (document.body && dock && !document.body.contains(dock)) {
-          dock = null; tocPanel = null; ringFg = null; ringNum = null; tocBtn = null; tocList = null;
+          dock = null; ringFg = null; ringNum = null; tocBtn = null; dir = null;
           build();
           sync();
+        } else if (!dir || !dir.ov.isConnected || !dir.wrap.isConnected) {
+          refreshDir();
         }
       }, 2000);
     });
