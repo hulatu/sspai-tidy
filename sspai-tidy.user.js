@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         少数派 · 阅读增强
 // @namespace    local.sspai.tidy
-// @version      1.3.0
-// @description  首页与 Matrix 去广告位/推广卡/侧栏，列表拉宽压紧；滚到底自动加载；作者主页默认文章列表并按首页样式重排；文章页读完就结束（清掉充电卡、广告、评论、关联阅读与正文互动条），另加阅读进度条、点图放大、代码块复制与「已读」标记
+// @version      1.4.2
+// @description  首页与 Matrix 去广告位/推广卡/侧栏，列表拉宽压紧；滚到底自动加载；作者主页默认文章列表并按首页样式重排；文章页读完就结束（清掉充电卡、广告、评论、关联阅读与正文互动条）；阅读进度、点图放大、代码块复制、已读标记；右下角控制条（进度 / 目录跳转 / 到底部），文章页下滑自动收起顶部导航
 // @author       hulatu
 // @homepageURL  https://github.com/hulatu/sspai-tidy
 // @supportURL   https://github.com/hulatu/sspai-tidy/issues
@@ -52,8 +52,282 @@
     progressBar:   true,   // 文章页顶部 2px 阅读进度条
     imageViewer:   true,   // 点正文图片放大，用的是 data-original 里的原图
     codeCopy:      true,   // 代码块右上角「复制」
-    markRead:      true    // 列表里把读过的文章压暗（记在 localStorage，只存最近 400 篇）
+    markRead:      true,   // 列表里把读过的文章压暗（记在 localStorage，只存最近 400 篇）
+
+    // ---- 右下角控制条 + 沉浸阅读 ----
+    pageDock:      true,   // 右下角控制条：阅读进度环（点=回顶部）/ 目录 / 到底部
+    dockToc:       true,   // 控制条里的「目录」按钮，只出现在文章页，可逐节跳转
+    immersive:     true    // 文章页下滑时收起顶部导航和「打开 App」按钮，上滑再出来
   };
+
+  /* ================================================================
+     路由变化
+     —— 站点是 SPA，点链接不会重新加载页面，脚本也就不会重跑。
+        这里统一包一次 history，谁需要就 onRoute 订阅
+     ================================================================ */
+  const routeSubs = [];
+
+  function onRoute(fn) { routeSubs.push(fn); }
+
+  function fireRoute() {
+    for (const fn of routeSubs) {
+      try { fn(); } catch (e) { /* 单个订阅出错不影响别的 */ }
+    }
+  }
+
+  window.addEventListener('popstate', fireRoute);
+  for (const k of ['pushState', 'replaceState']) {
+    const orig = history[k];
+    history[k] = function () {
+      const r = orig.apply(this, arguments);
+      fireRoute();
+      return r;
+    };
+  }
+
+  /* ================================================================
+     右下角控制条
+     —— 站点原来那条角标工具条（客服 + 返回顶部）在 pageDock 打开时整条隐藏，
+        位置让给这里：进度环（点一下回顶部）/ 目录 / 到底部
+     —— 文章页底部那条「说点什么…」是 fixed 56px 高，控制条要抬起来让开；
+        它随下滑收起时（站点自己会给它加 .translate）控制条再落回底部
+     ================================================================ */
+  const DOCK_CSS = `
+/* 站点自己的角标工具条：客服 + 返回顶部，这里两样都由控制条接管 */
+.app_toolbar { display: none !important; }
+
+#sspai-tidy-dock,
+#sspai-tidy-toc {
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  color: var(--B8-t, #000);
+  -webkit-tap-highlight-color: transparent;
+}
+
+#sspai-tidy-dock {
+  position: fixed;
+  right: 20px;
+  bottom: 24px;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  transition: bottom .25s var(--a-func-short, cubic-bezier(0, 0, 0, 1));
+}
+body:has(.article__bar__wrapper) #sspai-tidy-dock { bottom: 84px; }
+body:has(.article__bar__wrapper.translate) #sspai-tidy-dock { bottom: 24px; }
+
+#sspai-tidy-dock button,
+#sspai-tidy-toc button {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+#sspai-tidy-dock button:focus-visible,
+#sspai-tidy-toc button:focus-visible {
+  outline: 2px solid var(--brand, #da282a);
+  outline-offset: 2px;
+}
+
+#sspai-tidy-dock > button {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(0, 0, 0, .08);
+  background: rgba(255, 255, 255, .92);
+  -webkit-backdrop-filter: blur(12px) saturate(1.6);
+  backdrop-filter: blur(12px) saturate(1.6);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .1);
+  transition: background .18s ease, border-color .18s ease, transform .18s ease;
+}
+#sspai-tidy-dock > button:hover {
+  background: #fff;
+  border-color: rgba(0, 0, 0, .16);
+}
+#sspai-tidy-dock > button:active { transform: scale(.93); }
+#sspai-tidy-dock > button[hidden] { display: none !important; }
+#sspai-tidy-dock > button svg { width: 18px; height: 18px; }
+
+html.theme-dark #sspai-tidy-dock > button {
+  border-color: rgba(255, 255, 255, .12);
+  background: rgba(48, 48, 52, .92);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, .45);
+}
+html.theme-dark #sspai-tidy-dock > button:hover {
+  background: rgba(64, 64, 68, .96);
+  border-color: rgba(255, 255, 255, .2);
+}
+
+/* 进度环：外圈画弧，中间写百分比，点一下回顶部 */
+#sspai-tidy-dock .std-ring svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+#sspai-tidy-dock .std-ring circle { fill: none; stroke-width: 3; }
+#sspai-tidy-dock .std-ring-bg { stroke: rgba(0, 0, 0, .1); }
+#sspai-tidy-dock .std-ring-fg {
+  stroke: var(--brand, #da282a);
+  stroke-linecap: round;
+  transition: stroke-dashoffset .12s linear;
+}
+html.theme-dark #sspai-tidy-dock .std-ring-bg { stroke: rgba(255, 255, 255, .16); }
+html.theme-dark #sspai-tidy-dock .std-ring-fg { stroke: #ff6b63; }
+#sspai-tidy-dock .std-num {
+  position: relative;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: -.3px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 目录弹层 ---------- */
+#sspai-tidy-toc {
+  position: fixed;
+  right: 68px;
+  bottom: 24px;
+  z-index: 900;
+  width: 252px;
+  max-height: min(62vh, 560px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, .08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .95);
+  -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  backdrop-filter: blur(18px) saturate(1.6);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, .14);
+  transition: bottom .25s var(--a-func-short, cubic-bezier(0, 0, 0, 1));
+}
+#sspai-tidy-toc[hidden] { display: none !important; }
+body:has(.article__bar__wrapper) #sspai-tidy-toc { bottom: 84px; }
+body:has(.article__bar__wrapper.translate) #sspai-tidy-toc { bottom: 24px; }
+
+html.theme-dark #sspai-tidy-toc {
+  border-color: rgba(255, 255, 255, .1);
+  background: rgba(35, 35, 38, .96);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, .5);
+}
+
+#sspai-tidy-toc .std-toc-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px 8px 14px;
+  border-bottom: 1px solid rgba(128, 128, 128, .16);
+}
+#sspai-tidy-toc .std-toc-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+#sspai-tidy-toc .std-toc-nav {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+#sspai-tidy-toc .std-toc-nav button {
+  width: 24px;
+  height: 24px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--B6-t, #666);
+  transition: background .16s ease, color .16s ease;
+}
+#sspai-tidy-toc .std-toc-nav button:hover {
+  background: rgba(128, 128, 128, .16);
+  color: var(--B8-t, #000);
+}
+#sspai-tidy-toc .std-toc-nav svg { width: 14px; height: 14px; }
+
+#sspai-tidy-toc .std-toc-list {
+  position: relative;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  scrollbar-width: thin;
+}
+#sspai-tidy-toc .std-toc-item {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--B6-t, #555);
+  font-size: 12.5px;
+  line-height: 1.45;
+  text-align: left;
+  transition: background .16s ease, color .16s ease;
+}
+#sspai-tidy-toc .std-toc-item.std-lv3 {
+  padding-left: 20px;
+  font-size: 12px;
+}
+#sspai-tidy-toc .std-toc-item:hover {
+  background: rgba(128, 128, 128, .14);
+  color: var(--B8-t, #000);
+}
+#sspai-tidy-toc .std-toc-item.is-active {
+  background: rgba(218, 40, 42, .08);
+  color: var(--brand, #da282a);
+  font-weight: 600;
+}
+/* 深色下站点自己的 --brand 还是 #da282a，压在 #232326 上只有 3.4:1，换一档亮的 */
+html.theme-dark #sspai-tidy-toc .std-toc-item.is-active {
+  background: rgba(255, 107, 99, .14);
+  color: #ff6b63;
+}
+`;
+
+  /* ================================================================
+     文章页沉浸阅读
+     —— 只做顶部导航。底部那条「说点什么…」站点本来就会随下滑收起，
+        不重复插手，否则两边节奏对不上
+     —— 用 top 位移而不是 transform：header 里挂着 fixed 的移动端菜单，
+        transform 会把它变成 header 的包含块，位置全乱
+     ================================================================ */
+  const IMMERSIVE_CSS = `
+#app-head {
+  transition: top .28s var(--a-func-short, cubic-bezier(0, 0, 0, 1)), opacity .2s linear !important;
+}
+html.std-immersive #app-head {
+  top: -80px !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+#btn-call-app { transition: opacity .2s linear; }
+html.std-immersive #btn-call-app {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+`;
+
 
   /* ================================================================
      样式
@@ -507,6 +781,9 @@ ${CFG.userWide ? `
 .sspai-tidy-read:hover {
   opacity: 1;
 }
+
+${CFG.pageDock ? DOCK_CSS : ''}
+${CFG.immersive ? IMMERSIVE_CSS : ''}
 `;
 
   /* ================================================================
@@ -538,6 +815,334 @@ ${CFG.userWide ? `
   injectStyle();
   // 站点是 SPA，head 偶尔会被重建，兜一层
   setInterval(injectStyle, 2000);
+
+  /* ================================================================
+     右下角控制条 + 文章页沉浸阅读
+     —— 控制条：进度环（点=回顶部）/ 目录 / 到底部
+     —— 沉浸阅读：文章页下滑收起顶部导航，上滑再出来
+     ================================================================ */
+  if (CFG.pageDock || CFG.immersive) {
+    const isArticle = () => /^\/post\/\d+/.test(location.pathname);
+    const CIR = 2 * Math.PI * 16;          // 进度环周长（r = 16）
+
+    let dock = null, ringFg = null, ringNum = null, tocBtn = null;
+    let tocPanel = null, tocList = null;
+    let headings = [];                     // 文章小节（h2 / h3 的 DOM）
+    let tops = [];                         // 各小节相对文档的纵坐标
+    let topsAt = 0;
+    let active = -1;                       // 当前所在小节
+    let headerHidden = false;
+    let lastY = window.scrollY;
+    let lockUntil = 0;                     // 程序化跳转期间别收导航（否则落点会空出一条）
+
+    const icon = d => `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor"
+      stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"
+      aria-hidden="true">${d}</svg>`;
+
+    /* ---------- 建 DOM ---------- */
+    function build() {
+      if (!CFG.pageDock || dock || !document.body) return;
+
+      dock = document.createElement('div');
+      dock.id = 'sspai-tidy-dock';
+      dock.setAttribute('role', 'group');
+      dock.setAttribute('aria-label', '页面控制');
+      dock.innerHTML =
+        `<button type="button" data-act="top" class="std-ring" title="回到顶部" aria-label="回到顶部">` +
+          `<svg viewBox="0 0 36 36" aria-hidden="true">` +
+            `<circle class="std-ring-bg" cx="18" cy="18" r="16"></circle>` +
+            `<circle class="std-ring-fg" cx="18" cy="18" r="16"` +
+              ` stroke-dasharray="${CIR.toFixed(2)}" stroke-dashoffset="${CIR.toFixed(2)}"></circle>` +
+          `</svg>` +
+          `<span class="std-num">0</span>` +
+        `</button>` +
+        `<button type="button" data-act="toc" title="目录" aria-label="目录">` +
+          icon('<path d="M3.5 5.5h13M3.5 10h13M3.5 14.5h8"/>') +
+        `</button>` +
+        `<button type="button" data-act="bottom" title="到底部" aria-label="到底部">` +
+          icon('<path d="M5 4.5l5 4.5 5-4.5"/><path d="M5 10.5l5 4.5 5-4.5"/>') +
+        `</button>`;
+      document.body.appendChild(dock);
+
+      ringFg  = dock.querySelector('.std-ring-fg');
+      ringNum = dock.querySelector('.std-num');
+      tocBtn  = dock.querySelector('[data-act="toc"]');
+
+      tocPanel = document.createElement('div');
+      tocPanel.id = 'sspai-tidy-toc';
+      tocPanel.hidden = true;
+      tocPanel.innerHTML =
+        `<div class="std-toc-head">` +
+          `<span class="std-toc-title">目录</span>` +
+          `<div class="std-toc-nav">` +
+            `<button type="button" data-act="prev" title="上一节" aria-label="上一节">` +
+              icon('<path d="M6 12.5l4-4 4 4"/>') + `</button>` +
+            `<button type="button" data-act="next" title="下一节" aria-label="下一节">` +
+              icon('<path d="M6 8l4 4 4-4"/>') + `</button>` +
+          `</div>` +
+        `</div>` +
+        `<div class="std-toc-list"></div>`;
+      document.body.appendChild(tocPanel);
+      tocList = tocPanel.querySelector('.std-toc-list');
+
+      dock.addEventListener('click', onClick);
+      tocPanel.addEventListener('click', onClick);
+      // 别让点按冒到站点那边（会关掉它自己的下拉、触发全局监听）
+      for (const el of [dock, tocPanel]) {
+        el.addEventListener('pointerdown', e => e.stopPropagation());
+        el.addEventListener('mousedown', e => e.stopPropagation());
+      }
+    }
+
+    /* ---------- 交互 ---------- */
+    function onClick(e) {
+      const btn = e.target.closest('button[data-act]');
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const act = btn.dataset.act;
+      if (act === 'top') { closeToc(); scrollToY(0); }
+      else if (act === 'bottom') { closeToc(); toBottom(); }
+      else if (act === 'toc') toggleToc();
+      else if (act === 'prev') step(-1);
+      else if (act === 'next') step(1);
+      else if (act === 'goto') { jumpTo(+btn.dataset.i); closeToc(); }
+    }
+
+    // 图片懒加载会在滚动途中把页面撑长，一次平滑滚动常常差几十像素到不了底。
+    // 停稳后补一次，但只在「人没走远」的前提下补，别把用户拽回去
+    let bottomTimer = null;
+    function toBottom() {
+      const target = bottom();
+      scrollToY(target);
+      clearTimeout(bottomTimer);
+      bottomTimer = setTimeout(() => {
+        const max = bottom();
+        if (Math.abs(window.scrollY - target) > 240) return;   // 用户自己滚开了
+        if (max - window.scrollY > 8) window.scrollTo({ top: max });
+      }, 900);
+    }
+
+    function scrollToY(y) {
+      lockUntil = Date.now() + 1500;       // 平滑滚动全程别收导航
+      window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+    }
+
+    function bottom() {
+      return document.documentElement.scrollHeight - window.innerHeight;
+    }
+
+    // 顶部导航占 56px，跳转时留 16px 呼吸；导航收起后就不用留了
+    function offset() { return headerHidden ? 16 : 72; }
+
+    function jumpTo(i) {
+      if (i < 0) return;
+      // 目标节点可能已经被站点换掉了（软导航 / 重渲染），先对一次再量
+      if (!headings[i] || !headings[i].isConnected) {
+        buildToc();
+        if (!headings[i]) return;
+      }
+      const y = headings[i].getBoundingClientRect().top + window.scrollY - offset();
+      scrollToY(y);
+    }
+
+    function step(dir) {
+      if (!headings.length) return;
+      ensureTops(true);
+      const y = window.scrollY;
+      let idx = -1;
+      for (let i = 0; i < tops.length; i++) if (tops[i] - offset() - 4 <= y) idx = i;
+
+      if (dir > 0) {
+        if (idx + 1 >= headings.length) toBottom();
+        else jumpTo(idx + 1);
+      } else if (idx < 0) {
+        scrollToY(0);
+      } else if (y - (tops[idx] - offset()) > 48) {
+        jumpTo(idx);                       // 先回到本节开头
+      } else if (idx === 0) {
+        scrollToY(0);
+      } else {
+        jumpTo(idx - 1);
+      }
+    }
+
+    function toggleToc() {
+      if (!tocPanel || tocBtn.hidden) return;
+      if (tocPanel.hidden) {
+        ensureTops(true);
+        updateActive();
+        tocPanel.hidden = false;
+      } else {
+        closeToc();
+      }
+    }
+
+    function closeToc() { if (tocPanel) tocPanel.hidden = true; }
+
+    /* ---------- 目录内容 ---------- */
+    function collectHeads() {
+      return isArticle()
+        ? [...document.querySelectorAll('.article__main__content h2, .article__main__content h3')]
+            .filter(h => (h.textContent || '').trim())
+        : [];
+    }
+
+    function buildToc(found) {
+      const art = isArticle();
+      const list = found || collectHeads();
+
+      // 站点重渲染正文的那一瞬间会查不到标题，这时别把手上这份目录抹掉
+      if (art && !list.length && headings.length) return;
+
+      headings = list;
+      tops = [];
+      topsAt = 0;
+
+      const ok = CFG.dockToc && headings.length > 0;
+      if (tocBtn) tocBtn.hidden = !ok;
+      if (!ok) {
+        if (tocList) tocList.textContent = '';
+        closeToc();
+        return;
+      }
+
+      tocList.textContent = '';
+      headings.forEach((h, i) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'std-toc-item std-lv' + (h.tagName === 'H3' ? 3 : 2);
+        b.dataset.act = 'goto';
+        b.dataset.i = String(i);
+        b.textContent = (h.textContent || '').trim().replace(/\s+/g, ' ');
+        tocList.appendChild(b);
+      });
+    }
+
+    // 正文是分批渲染的：第一屏只有前几个标题，后面几节晚到；
+    // 站点重渲染时整棵节点还会换掉（旧节点被摘走，量出来的坐标全是 0）。
+    // 所以按「节点身份」判断要不要重建，光比文字不够
+    function refreshToc() {
+      if (!dock) return;
+      const now = collectHeads();
+      if (now.length === headings.length && now.every((el, i) => el === headings[i])) return;
+      buildToc(now);
+      updateActive();
+    }
+
+    function ensureTops(force) {
+      const now = Date.now();
+      if (!force && tops.length === headings.length && now - topsAt < 1200) return;
+      if (!headings.every(h => h.isConnected)) buildToc();   // 节点被换掉了，重取
+      tops = headings.map(h => h.getBoundingClientRect().top + window.scrollY);
+      topsAt = now;
+    }
+
+    /* ---------- 进度 / 当前小节 ---------- */
+    function updateProgress() {
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      const p = max > 8 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
+      if (ringFg) ringFg.setAttribute('stroke-dashoffset', (CIR * (1 - p)).toFixed(2));
+      if (ringNum) ringNum.textContent = String(Math.round(p * 100));
+    }
+
+    function markActive(i) {
+      if (i === active) return;
+      active = i;
+      if (!tocList) return;
+      const items = tocList.children;
+      for (let k = 0; k < items.length; k++) items[k].classList.toggle('is-active', k === i);
+      const it = items[i];
+      if (tocPanel.hidden || !it) return;
+      // 打开着的时候把当前项滚进可视区（只滚列表，不动页面）
+      const top = it.offsetTop, h = it.offsetHeight;
+      const view = tocList.scrollTop, hh = tocList.clientHeight;
+      if (top < view) tocList.scrollTop = top - 8;
+      else if (top + h > view + hh) tocList.scrollTop = top + h - hh + 8;
+    }
+
+    function updateActive() {
+      if (!headings.length) { markActive(-1); return; }
+      ensureTops();
+      const y = window.scrollY + offset() + 8;
+      let idx = -1;
+      for (let i = 0; i < tops.length; i++) if (tops[i] <= y) idx = i;
+      markActive(idx);
+    }
+
+    /* ---------- 沉浸阅读 ---------- */
+    function setHeader(hide) {
+      if (hide === headerHidden) return;
+      headerHidden = hide;
+      document.documentElement.classList.toggle('std-immersive', hide);
+    }
+
+    let ticking = false;
+    function onScroll() {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        ticking = false;
+        const y = window.scrollY;
+        const dy = y - lastY;
+        lastY = y;
+        updateProgress();
+        updateActive();
+        if (!CFG.immersive || !isArticle() || Date.now() < lockUntil) return;
+        // 顶部永远露出来；下滑一段就收起，稍微上滑就回来
+        if (y < 80) setHeader(false);
+        else if (dy > 4 && y > 240) setHeader(true);
+        else if (dy < -4) setHeader(false);
+      });
+    }
+
+    /* ---------- 换页 ---------- */
+    function sync() {
+      setHeader(false);
+      lastY = window.scrollY;
+      active = -1;
+      if (!dock) return;
+      buildToc();
+      updateProgress();
+      updateActive();
+    }
+
+    whenDom(() => {
+      if (CFG.pageDock) build();
+      sync();
+
+      window.addEventListener('scroll', onScroll, { passive: true });
+      window.addEventListener('resize', () => { topsAt = 0; updateProgress(); updateActive(); });
+
+      // 软导航后 DOM 是慢慢换的，等一下再重算；
+      // 站点自己也会 replaceState（换 query、写滚动位置），那不算换页
+      let rt = null;
+      let lastPath = location.pathname + location.search;
+      onRoute(() => {
+        const p = location.pathname + location.search;
+        if (p === lastPath) return;
+        lastPath = p;
+        clearTimeout(rt);
+        rt = setTimeout(sync, 300);
+      });
+
+      // 正文分批渲染，标题可能晚到；用 observer 兜住，合并成 500ms 一次
+      let moTimer = null;
+      new MutationObserver(() => {
+        clearTimeout(moTimer);
+        moTimer = setTimeout(refreshToc, 500);
+      }).observe(document.documentElement, { childList: true, subtree: true });
+
+      // body 被站点整块重建时把自己接回来
+      setInterval(() => {
+        if (document.body && dock && !document.body.contains(dock)) {
+          dock = null; tocPanel = null; ringFg = null; ringNum = null; tocBtn = null; tocList = null;
+          build();
+          sync();
+        }
+      }, 2000);
+    });
+  }
 
   /* ================================================================
      滚到底自动加载（Matrix 的「加载更多」）
@@ -645,15 +1250,7 @@ ${CFG.userWide ? `
       timer = setTimeout(() => { fix(); mark(); }, 500);
     }
 
-    window.addEventListener('popstate', schedule);
-    for (const k of ['pushState', 'replaceState']) {
-      const orig = history[k];
-      history[k] = function () {
-        const r = orig.apply(this, arguments);
-        schedule();
-        return r;
-      };
-    }
+    onRoute(schedule);
     schedule();
   }
 
