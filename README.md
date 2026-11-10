@@ -4,7 +4,7 @@
 
 **一个 Tampermonkey 用户脚本，把 [sspai.com](https://sspai.com) 改成一个只用来读东西的地方。**
 
-[![version](https://img.shields.io/badge/version-1.4.0-1b1917?style=flat-square)](sspai-tidy.user.js)
+[![version](https://img.shields.io/badge/version-1.4.1-1b1917?style=flat-square)](sspai-tidy.user.js)
 [![platform](https://img.shields.io/static/v1?label=%E5%B9%B3%E5%8F%B0&message=sspai.com&color=d71a1b&style=flat-square)](https://sspai.com)
 [![userscript](https://img.shields.io/static/v1?label=%E7%B1%BB%E5%9E%8B&message=UserScript&color=2f7d5d&style=flat-square)](https://www.tampermonkey.net/)
 [![license](https://img.shields.io/static/v1?label=%E8%AE%B8%E5%8F%AF&message=MIT&color=1b1917&style=flat-square)](LICENSE)
@@ -24,6 +24,7 @@
 | 它到底动了什么 | [🎯 一句话](#-一句话) ・ [📊 数字对比](#-数字对比) |
 | 文章页有什么变化 | [📖 文章页：读完就结束](#-文章页读完就结束) |
 | 1.4 新增了什么 | [✨ 1.4 新增](#-14-新增) |
+| 1.4.1 新增了什么 | [✨ 1.4.1 新增](#-141-新增) |
 | 怎么装 | [🚀 装法](#-装法) |
 | 想自己调 | [🎛 想微调](#-想微调) |
 | 坏了 / 不生效 | [⚠️ 注意](#-注意) |
@@ -97,6 +98,30 @@
 读过的文章，在首页 / Matrix / 作者页的列表里会**压暗到 48%**，鼠标悬停恢复原亮度。
 记录只写在你自己浏览器的 `localStorage`（`sspai-tidy:read`），最多存 400 条，不上传任何地方。
 
+## ✨ 1.4.1 新增
+
+> 1.4.1 再补三件事：搜索页、文章正文宽度、列表页的页面跳转。
+
+### 🔍 搜索页拉宽
+
+搜索页（`/search`）之前完全没动过：结果区窄，右侧还有一列「推荐标签」。现在把它拉宽到和首页一样（1120px），藏掉右侧推荐标签栏。文章结果是 `.module__list__slot` 包着 `PostCard`；如果它渲染的是 `.article__card`，首页那套紧凑规则（全局的）会直接沿用。
+
+### 📏 文章正文放宽
+
+实测正文栏和标题栏都是 680px（1919px 视口）。现在一起放宽到 800px，保持对齐。`wideArticle` 开关默认开，觉得行太长就关掉（`wideArticle: false`）。
+
+### 📖 页面跳转
+
+首页 / Matrix / 作者主页 / 搜索页都是无限滚动或「加载更多」，想看旧文章只能一直往下翻。现在右下角多了一个悬浮控件（在返回顶部按钮的上方）：
+
+- 显示当前已加载到第几页（「页」按每批的数量算：首屏有几条，一页就是几条）
+- 输页码点「跳转」，会一直加载到那一页再滚过去
+- 点「+10 页」，一次加载 10 页
+
+Matrix 有「加载更多」按钮就直接点它；首页 / 作者页是无限滚动，就滚到底触发加载。加载时按钮会暂时禁用，避免重复点。
+
+> 说明：Matrix 列表行里并没有「复制链接 / 分享 / 在集合中查看」这三个按钮——站方服务端渲染的 HTML 里没有，悬停也不会出现；每行底部只有作者、点赞数、评论数和时间，都是有用的信息，所以 1.4.1 没有动它们。
+
 ## 🚀 装法
 
 1. 装 [Tampermonkey](https://www.tampermonkey.net/)（Chrome / Edge / Firefox 商店都有；Safari 用 [Userscripts](https://apps.apple.com/app/userscripts/id1463298887)）。
@@ -141,8 +166,13 @@ const CFG = {
   tocPin:        true,   // 文章页目录常驻展开（自动点站方自己的固定按钮）
   hideHeaderOnScroll: true, // 文章页向下滚动时收起顶栏，向上滚再出现
   wordCount:     true,   // 标题下「14 分钟阅读」旁显示「约 X 字」
-  hideMatrixTitle: true  // Matrix 顶部只留「社区广场 / 专栏 / 一派」标签，藏掉大标题行
+  hideMatrixTitle: true, // Matrix 顶部只留「社区广场 / 专栏 / 一派」标签，藏掉大标题行
   // 1.4 已删 imageViewer：点图放大改用原站自带查看器，不再拦截点击
+
+  // ---- 1.4.1 新增 ----
+  searchWide:    true,   // 搜索页拉宽、藏掉右侧「推荐标签」
+  wideArticle:   true,   // 文章正文放宽到 800px（默认开，觉得行太长就关掉）
+  pageJump:      true    // 列表页右下角加「页面跳转」：输页码跳到指定页、或一次加载 10 页
 };
 ```
 

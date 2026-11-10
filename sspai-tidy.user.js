@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         少数派 · 阅读增强
 // @namespace    local.sspai.tidy
-// @version      1.4.0
-// @description  首页与 Matrix 去广告位/推广卡/侧栏，列表拉宽压紧；滚到底自动加载；作者主页默认文章列表并按首页样式重排；文章页读完就结束（清掉充电卡、广告、评论、关联阅读与正文互动条），另加阅读进度条、目录常驻、顶栏自动隐藏、字数统计、代码块复制与「已读」标记；点图放大改用原站自带查看器
+// @version      1.4.1
+// @description  首页与 Matrix 去广告位/推广卡/侧栏，列表拉宽压紧；滚到底自动加载；作者主页默认文章列表并按首页样式重排；文章页读完就结束（清掉充电卡、广告、评论、关联阅读与正文互动条），另加阅读进度条、目录常驻、顶栏自动隐藏、字数统计、代码块复制与「已读」标记；点图放大改用原站自带查看器；搜索页拉宽、文章正文放宽、列表加页面跳转
 // @author       hulatu
 // @homepageURL  https://github.com/hulatu/sspai-tidy
 // @supportURL   https://github.com/hulatu/sspai-tidy/issues
@@ -57,7 +57,11 @@
     tocPin:        true,   // 文章页目录常驻展开（自动点站方自己的固定按钮）
     hideHeaderOnScroll: true, // 文章页向下滚动时收起顶栏，向上滚再出现
     wordCount:     true,   // 标题下「14 分钟阅读」旁显示「约 X 字」
-    hideMatrixTitle: true  // Matrix 顶部只留「社区广场 / 专栏 / 一派」标签，藏掉大标题行
+    hideMatrixTitle: true, // Matrix 顶部只留「社区广场 / 专栏 / 一派」标签，藏掉大标题行
+    // ---- 1.4.1 新增 ----
+    searchWide:    true,   // 搜索页拉宽、藏掉右侧「推荐标签」
+    wideArticle:   true,   // 文章正文放宽到 800px（默认开，觉得行太长就关掉）
+    pageJump:      true    // 列表页右下角加「页面跳转」：输页码跳到指定页、或一次加载 10 页
   };
 
   /* ================================================================
@@ -466,6 +470,83 @@ ${CFG.hideMatrixTitle ? `/* ---------- 1.4：Matrix 顶部大标题行 ---------
 /* 只藏标题行（大 Logo +「开始创作」按钮），「社区广场 / 专栏 / 一派」标签页留着 */
 .matrix-page-header .page-title {
   display: none !important;
+}` : ''}
+
+${CFG.searchWide ? `/* ---------- 1.4.1：搜索页 ---------- */
+/* 搜索页拉宽到和首页一样（1120px），藏掉右侧「推荐标签」栏。
+   文章结果是 .module__list__slot 包着 PostCard；如果 PostCard 渲染的是
+   .article__card，首页那套紧凑规则（全局的）会直接沿用，不用再写一遍。 */
+.page__search {
+  max-width: 1120px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+.page__search__main__left__wrapper {
+  flex: 1;
+  min-width: 0;
+  max-width: none !important;
+}
+.recommend__wrapper {
+  display: none !important;
+}
+.page__search .module__list__slot {
+  display: block;
+}` : ''}
+
+${CFG.pageJump ? `/* ---------- 1.4.1：页面跳转 ---------- */
+/* 列表页右下角的悬浮控件：显示当前页、输页码跳转、一次加载 10 页。
+   放在返回顶部按钮的上方，不挡它。 */
+#sspai-tidy-pagejump {
+  position: fixed;
+  right: 18px;
+  bottom: 90px;
+  z-index: 2147483000;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--B0-t, #fff);
+  border: 1px solid var(--B3-t, #e5e5e5);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .12);
+  font-size: 12px;
+  color: var(--B6-t, #666);
+  white-space: nowrap;
+}
+#sspai-tidy-pagejump input {
+  width: 46px;
+  padding: 3px 6px;
+  border: 1px solid var(--B3-t, #ddd);
+  border-radius: 4px;
+  font: inherit;
+  text-align: center;
+  background: var(--B0-t, #fff);
+  color: var(--B8-t, #222);
+}
+#sspai-tidy-pagejump button {
+  padding: 3px 8px;
+  border: 1px solid var(--B3-t, #ddd);
+  border-radius: 4px;
+  background: var(--B0-t, #fff);
+  color: var(--B8-t, #222);
+  font: inherit;
+  cursor: pointer;
+}
+#sspai-tidy-pagejump button:hover {
+  border-color: var(--B6-t, #999);
+}
+#sspai-tidy-pagejump button:disabled {
+  opacity: .45;
+  cursor: default;
+}` : ''}
+
+${CFG.wideArticle ? `/* ---------- 1.4.1：文章正文放宽 ---------- */
+/* 实测正文栏和标题栏都是 680px（1919px 视口）。一起放宽到 800px，保持对齐。
+   只改 max-width，不动 margin，居中方式沿用站方自己的。 */
+.article__header,
+.article__main__wrapper,
+.article__main__content {
+  max-width: 800px !important;
 }` : ''}
 
 /* ---------- 代码块复制 ---------- */
@@ -878,5 +959,127 @@ ${CFG.hideMatrixTitle ? `/* ---------- 1.4：Matrix 顶部大标题行 ---------
       attachCopy();
       new MutationObserver(kickCopy).observe(document.body, { childList: true, subtree: true });
     });
+  }
+
+  /* ---------- 页面跳转（列表页） ---------- */
+  // 首页 / Matrix / 作者主页 / 搜索页都是无限滚动或「加载更多」，想看旧文章只能一直往下翻。
+  // 这里在右下角加一个悬浮控件：显示当前已加载到第几页，输页码跳到指定页，或一次加载 10 页。
+  // 「页」按每批的数量算：首屏有几条，一页就是几条；跳到第 N 页就是滚到第 (N-1)*每页条数 条。
+  if (CFG.pageJump) {
+    const PAGEJUMP_ID = 'sspai-tidy-pagejump';
+
+    const isListPage = () => {
+      const p = location.pathname;
+      return p === '/' || p.startsWith('/feed') || p.startsWith('/matrix') || p.startsWith('/u/') || p.startsWith('/search');
+    };
+
+    // 各列表页的条目选择器
+    const getItems = () => {
+      const p = location.pathname;
+      if (p === '/' || p.startsWith('/feed')) return [...document.querySelectorAll('.feed .article__card')];
+      if (p.startsWith('/matrix')) return [...document.querySelectorAll('.posts-list .post-item')];
+      if (p.startsWith('/u/')) return [...document.querySelectorAll('.user__content__card, .feed .article__card')];
+      if (p.startsWith('/search')) return [...document.querySelectorAll('.page__search .module__list__slot')];
+      return [];
+    };
+
+    let pageSize = 10; // 每页条数，默认 10；等首批条目出现后按实际数量修正
+    let pageSizeFixed = false;
+    let loading = false;
+
+    const fixPageSize = () => {
+      if (pageSizeFixed) return;
+      const n = getItems().length;
+      if (n > 0) { pageSize = n; pageSizeFixed = true; }
+    };
+
+    const triggerLoad = () => {
+      // Matrix 有「加载更多」按钮，直接点它
+      const btn = document.querySelector('.feed__load-more');
+      if (btn && btn.offsetParent !== null) { btn.click(); return; }
+      // 首页 / 作者页是无限滚动，滚到底触发加载
+      window.scrollTo(0, document.documentElement.scrollHeight);
+    };
+
+    const waitForMore = (before, timeout = 8000) => new Promise((resolve) => {
+      const t0 = Date.now();
+      const check = () => {
+        if (getItems().length > before) return resolve(true);
+        if (Date.now() - t0 > timeout) return resolve(false);
+        setTimeout(check, 300);
+      };
+      check();
+    });
+
+    const currentPage = () => Math.max(1, Math.ceil(getItems().length / pageSize));
+
+    // 一直加载，直到条目数够到第 target 页，或加载失败/超时/到头
+    const ensurePage = async (target) => {
+      for (let i = 0; i < 40; i++) {
+        const items = getItems();
+        if (items.length >= target * pageSize) return true;
+        const before = items.length;
+        triggerLoad();
+        const grew = await waitForMore(before);
+        if (!grew) return getItems().length >= target * pageSize;
+      }
+      return getItems().length >= target * pageSize;
+    };
+
+    const scrollToPage = (n) => {
+      const items = getItems();
+      const el = items[(n - 1) * pageSize] || items[items.length - 1];
+      if (!el) return;
+      el.scrollIntoView({ block: 'start' });
+      window.scrollBy(0, -70); // 留出顶栏高度
+    };
+
+    const buildPanel = () => {
+      if (document.getElementById(PAGEJUMP_ID)) return;
+      if (!isListPage()) return;
+      const panel = document.createElement('div');
+      panel.id = PAGEJUMP_ID;
+      panel.innerHTML = '<span>第 <b>1</b> 页</span><input type="number" min="1" value="1" aria-label="页码"><button type="button">跳转</button><button type="button">+10 页</button>';
+      const num = panel.querySelector('b');
+      const input = panel.querySelector('input');
+      const [jumpBtn, moreBtn] = panel.querySelectorAll('button');
+      const refresh = () => { fixPageSize(); num.textContent = String(currentPage()); };
+
+      jumpBtn.addEventListener('click', async () => {
+        if (loading) return;
+        const target = Math.max(1, parseInt(input.value, 10) || 1);
+        loading = true;
+        jumpBtn.disabled = true; moreBtn.disabled = true;
+        input.value = String(target);
+        await ensurePage(target);
+        scrollToPage(target);
+        refresh();
+        loading = false;
+        jumpBtn.disabled = false; moreBtn.disabled = false;
+      });
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') jumpBtn.click(); });
+
+      moreBtn.addEventListener('click', async () => {
+        if (loading) return;
+        const target = currentPage() + 10;
+        loading = true;
+        jumpBtn.disabled = true; moreBtn.disabled = true;
+        await ensurePage(target);
+        scrollToPage(target);
+        refresh();
+        loading = false;
+        jumpBtn.disabled = false; moreBtn.disabled = false;
+      });
+
+      document.body.appendChild(panel);
+      refresh();
+      // 滚动时顺手刷新页码（节流）
+      let raf = 0;
+      addEventListener('scroll', () => {
+        if (!raf) raf = requestAnimationFrame(() => { raf = 0; refresh(); });
+      }, { passive: true });
+    };
+
+    whenDom(buildPanel);
   }
 })();
