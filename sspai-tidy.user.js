@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         少数派 · 阅读增强
 // @namespace    local.sspai.tidy
-// @version      1.4.1
-// @description  首页与 Matrix 去广告位/推广卡/侧栏，列表拉宽压紧；滚到底自动加载；作者主页默认文章列表并按首页样式重排；文章页读完就结束（清掉充电卡、广告、评论、关联阅读与正文互动条），另加阅读进度条、目录常驻、顶栏自动隐藏、字数统计、代码块复制与「已读」标记；点图放大改用原站自带查看器；搜索页拉宽、文章正文放宽、列表加页面跳转
+// @version      1.3.0
+// @description  首页与 Matrix 去广告位/推广卡/侧栏，列表拉宽压紧；滚到底自动加载；作者主页默认文章列表并按首页样式重排；文章页读完就结束（清掉充电卡、广告、评论、关联阅读与正文互动条），另加阅读进度条、点图放大、代码块复制与「已读」标记
 // @author       hulatu
 // @homepageURL  https://github.com/hulatu/sspai-tidy
 // @supportURL   https://github.com/hulatu/sspai-tidy/issues
@@ -49,19 +49,10 @@
     hideInlineComment:   true, // 正文每个章节末尾的「发表首评 + 表情」互动条（7 处，约 392px）
 
     // ---- 新增：读起来更顺手 ----
-    // 1.4 起点图放大不再自己实现：原站已有全功能查看器（切换、缩略图、旋转、下载），
-    // 脚本之前在捕获阶段拦截点击反而把它挡住了。现在不拦截，让原站查看器自己工作。
     progressBar:   true,   // 文章页顶部 2px 阅读进度条
+    imageViewer:   true,   // 点正文图片放大，用的是 data-original 里的原图
     codeCopy:      true,   // 代码块右上角「复制」
-    markRead:      true,   // 列表里把读过的文章压暗（记在 localStorage，只存最近 400 篇）
-    tocPin:        true,   // 文章页目录常驻展开（自动点站方自己的固定按钮）
-    hideHeaderOnScroll: true, // 文章页向下滚动时收起顶栏，向上滚再出现
-    wordCount:     true,   // 标题下「14 分钟阅读」旁显示「约 X 字」
-    hideMatrixTitle: true, // Matrix 顶部只留「社区广场 / 专栏 / 一派」标签，藏掉大标题行
-    // ---- 1.4.1 新增 ----
-    searchWide:    true,   // 搜索页拉宽、藏掉右侧「推荐标签」
-    wideArticle:   true,   // 文章正文放宽到 800px（默认开，觉得行太长就关掉）
-    pageJump:      true    // 列表页右下角加「页面跳转」：输页码跳到指定页、或一次加载 10 页
+    markRead:      true    // 列表里把读过的文章压暗（记在 localStorage，只存最近 400 篇）
   };
 
   /* ================================================================
@@ -438,116 +429,50 @@ ${CFG.userWide ? `
   transition: width .1s linear, opacity .2s;
 }
 
-/* ---------- 1.4：目录常驻 ---------- */
-${CFG.tocPin ? `/* 目录列表站方默认用内联 display:none 藏着，悬停才展开。这里直接覆盖，让它一直显示。
-   站方自己的固定按钮（.article__directory__pin）也会在 JS 里点一下，进入站方自己的「已固定」状态。 */
-.article__directory__wrapper.comp__Directory {
-  display: block !important;
-}` : ''}
-
-/* ---------- 1.4：顶栏自动隐藏（文章页） ---------- */
-/* #app-head 是全站顶栏。向下滚时把它整个向上平移藏起来，向上滚再放回来。
-   用 transform，不占布局、不引起页面跳动；进度条（fixed top:0）不受影响。
-   只有 JS 加上 .sspai-tidy-header-hidden 时才生效。 */
-#app-head {
-  transition: transform .25s ease;
+/* ---------- 图片放大 ---------- */
+.article__main__content figure.image img {
+  cursor: zoom-in;
 }
-#app-head.sspai-tidy-header-hidden {
-  transform: translateY(-100%);
-}
-
-/* ---------- 1.4：字数统计 ---------- */
-/* 插在「14 分钟阅读」后面，和它同字号、同灰色，中间用 · 隔开。
-   只有 wordCount 开着时才会创建这个 span。 */
-.sspai-tidy-wordcount {
-  color: var(--B6-t);
-}
-.sspai-tidy-wordcount::before {
-  content: ' · ';
-}
-
-${CFG.hideMatrixTitle ? `/* ---------- 1.4：Matrix 顶部大标题行 ---------- */
-/* 只藏标题行（大 Logo +「开始创作」按钮），「社区广场 / 专栏 / 一派」标签页留着 */
-.matrix-page-header .page-title {
-  display: none !important;
-}` : ''}
-
-${CFG.searchWide ? `/* ---------- 1.4.1：搜索页 ---------- */
-/* 搜索页拉宽到和首页一样（1120px），藏掉右侧「推荐标签」栏。
-   文章结果是 .module__list__slot 包着 PostCard；如果 PostCard 渲染的是
-   .article__card，首页那套紧凑规则（全局的）会直接沿用，不用再写一遍。 */
-.page__search {
-  max-width: 1120px !important;
-  margin-left: auto !important;
-  margin-right: auto !important;
-}
-.page__search__main__left__wrapper {
-  flex: 1;
-  min-width: 0;
-  max-width: none !important;
-}
-.recommend__wrapper {
-  display: none !important;
-}
-.page__search .module__list__slot {
-  display: block;
-}` : ''}
-
-${CFG.pageJump ? `/* ---------- 1.4.1：页面跳转 ---------- */
-/* 列表页右下角的悬浮控件：显示当前页、输页码跳转、一次加载 10 页。
-   放在返回顶部按钮的上方，不挡它。 */
-#sspai-tidy-pagejump {
+#sspai-tidy-viewer {
   position: fixed;
-  right: 18px;
-  bottom: 90px;
-  z-index: 2147483000;
+  inset: 0;
+  z-index: 2147483001;
+  background: rgba(0, 0, 0, .9);
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  background: var(--B0-t, #fff);
-  border: 1px solid var(--B3-t, #e5e5e5);
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, .12);
+  justify-content: center;
+  padding: 28px;
+  box-sizing: border-box;
+}
+#sspai-tidy-viewer img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 3px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, .55);
+  cursor: zoom-in;
+}
+#sspai-tidy-viewer.is-zoomed {
+  display: block;
+  overflow: auto;
+}
+#sspai-tidy-viewer.is-zoomed img {
+  max-width: none;
+  max-height: none;
+  margin: 28px auto;
+  cursor: zoom-out;
+}
+#sspai-tidy-viewer .sspai-tidy-viewer__hint {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  color: #fff;
+  opacity: .62;
   font-size: 12px;
-  color: var(--B6-t, #666);
-  white-space: nowrap;
+  letter-spacing: .02em;
+  pointer-events: none;
 }
-#sspai-tidy-pagejump input {
-  width: 46px;
-  padding: 3px 6px;
-  border: 1px solid var(--B3-t, #ddd);
-  border-radius: 4px;
-  font: inherit;
-  text-align: center;
-  background: var(--B0-t, #fff);
-  color: var(--B8-t, #222);
-}
-#sspai-tidy-pagejump button {
-  padding: 3px 8px;
-  border: 1px solid var(--B3-t, #ddd);
-  border-radius: 4px;
-  background: var(--B0-t, #fff);
-  color: var(--B8-t, #222);
-  font: inherit;
-  cursor: pointer;
-}
-#sspai-tidy-pagejump button:hover {
-  border-color: var(--B6-t, #999);
-}
-#sspai-tidy-pagejump button:disabled {
-  opacity: .45;
-  cursor: default;
-}` : ''}
-
-${CFG.wideArticle ? `/* ---------- 1.4.1：文章正文放宽 ---------- */
-/* 实测正文栏和标题栏都是 680px（1919px 视口）。一起放宽到 800px，保持对齐。
-   只改 max-width，不动 margin，居中方式沿用站方自己的。 */
-.article__header,
-.article__main__wrapper,
-.article__main__content {
-  max-width: 800px !important;
-}` : ''}
 
 /* ---------- 代码块复制 ---------- */
 .article__main__content pre {
@@ -611,13 +536,8 @@ ${CFG.wideArticle ? `/* ---------- 1.4.1：文章正文放宽 ---------- */
   }
 
   injectStyle();
-  // 站点是 SPA，head 偶尔会被重建：样式丢了就补回来。
-  // 用 MutationObserver 代替原来每 2 秒轮询一遍，没变化时不产生开销。
-  whenDom(() => {
-    new MutationObserver(() => {
-      if (!document.getElementById(STYLE_ID)) injectStyle();
-    }).observe(document.documentElement, { childList: true, subtree: true });
-  });
+  // 站点是 SPA，head 偶尔会被重建，兜一层
+  setInterval(injectStyle, 2000);
 
   /* ================================================================
      滚到底自动加载（Matrix 的「加载更多」）
@@ -776,87 +696,57 @@ ${CFG.wideArticle ? `/* ---------- 1.4.1：文章正文放宽 ---------- */
     whenDom(() => { update(); setInterval(update, 2000); });
   }
 
-  /* ---------- 目录常驻 ---------- */
-  // 站方目录默认是收起的（一条虚线，悬停才展开），里面有个固定按钮 .article__directory__pin。
-  // 这里在文章页打开后点一下它，让目录进入站方自己的「已固定」状态；
-  // 再加一道 CSS（.article__directory__wrapper display:block）兜底。
-  if (CFG.tocPin) {
-    // 目录每次打开文章都是收起状态（服务端渲染里就是 display:none），所以点一次固定按钮就是固定住，
-    // 不用判断当前状态。注意：不能用 getComputedStyle 查 display 来判断——上面那道 CSS
-    // （display:block !important）会把计算值改成 block，导致永远以为已经展开而不点。
-    let pinned = false;
-    const pinToc = () => {
-      if (!isPostPage() || pinned) return pinned;
-      const pin = document.querySelector('.article__directory__pin');
-      if (!pin) return false;
-      pin.click();
-      pinned = true;
-      return true;
+  /* ---------- 点图放大 ---------- */
+  if (CFG.imageViewer) {
+    const VIEWER_ID = 'sspai-tidy-viewer';
+    let viewer = null;
+
+    const closeViewer = () => {
+      if (!viewer) return;
+      viewer.remove();
+      viewer = null;
+      document.documentElement.style.overflow = '';
     };
 
-    whenDom(() => {
-      // 目录组件是文章渲染后才挂上的，重试几次
-      let tries = 0;
-      const t = setInterval(() => {
-        if (pinToc() || ++tries >= 10) clearInterval(t);
-      }, 500);
-    });
-  }
+    const openViewer = (img) => {
+      // 站点把原图地址放在 data-original 里，正文那张是 1120px 的压缩版
+      const src = img.getAttribute('data-original') || img.currentSrc || img.src;
+      if (!src) return;
+      closeViewer();
 
-  /* ---------- 顶栏自动隐藏（文章页） ---------- */
-  // 向下滚超过 120px 后把 #app-head 向上平移藏起来，向上滚立即放回。
-  // 用 rAF 节流；回到顶部附近时一定显示。
-  if (CFG.hideHeaderOnScroll) {
-    const headEl = () => document.querySelector('#app-head');
-    let lastY = 0;
-    let raf = 0;
+      viewer = document.createElement('div');
+      viewer.id = VIEWER_ID;
 
-    const onScroll = () => {
-      raf = 0;
-      const el = headEl();
-      if (!isPostPage()) {
-        if (el) el.classList.remove('sspai-tidy-header-hidden');
-        lastY = window.scrollY;
-        return;
-      }
-      const y = window.scrollY;
-      if (!el) { lastY = y; return; }
-      if (y > lastY && y > 120) el.classList.add('sspai-tidy-header-hidden');
-      else if (y < lastY || y <= 120) el.classList.remove('sspai-tidy-header-hidden');
-      lastY = y;
+      const big = document.createElement('img');
+      big.src = src;
+      big.alt = img.alt || '';
+
+      const hint = document.createElement('div');
+      hint.className = 'sspai-tidy-viewer__hint';
+      hint.textContent = '点击图片切换原始大小 · Esc 或点空白关闭';
+
+      viewer.append(big, hint);
+      viewer.addEventListener('click', (e) => {
+        if (e.target === big) viewer.classList.toggle('is-zoomed');
+        else closeViewer();
+      });
+
+      document.documentElement.appendChild(viewer);
+      document.documentElement.style.overflow = 'hidden';
     };
 
-    const kick = () => { if (!raf) raf = requestAnimationFrame(onScroll); };
-    addEventListener('scroll', kick, { passive: true });
-  }
+    // 用捕获阶段，免得站点自己的点击处理先跑
+    document.addEventListener('click', (e) => {
+      const img = e.target;
+      if (!(img instanceof HTMLImageElement)) return;
+      if (!img.closest('.article__main__content')) return;
+      if (img.closest('a')) return;          // 图包在链接里时让链接自己走
+      e.preventDefault();
+      openViewer(img);
+    }, true);
 
-  /* ---------- 字数统计 ---------- */
-  // 数正文 .article__main__content 的字数，插在「14 分钟阅读」后面。
-  // 中英文混排都按字符数，去掉空白后计数。
-  if (CFG.wordCount) {
-    const showWordCount = () => {
-      if (!isPostPage()) return;
-      if (document.querySelector('.sspai-tidy-wordcount')) return;
-      const rt = document.querySelector('.article__header__reading-time');
-      const body = document.querySelector('.article__main__content');
-      if (!rt || !body) return;
-      // 先把脚本自己加的「复制」按钮摘掉再数，否则字数会多算两个字；
-      // 用 clone，不动页面上的真节点
-      const clone = body.cloneNode(true);
-      clone.querySelectorAll('.sspai-tidy-copy').forEach((el) => el.remove());
-      const n = clone.textContent.replace(/\s+/g, '').length;
-      if (!n) return;
-      const span = document.createElement('span');
-      span.className = 'sspai-tidy-wordcount';
-      span.textContent = '约 ' + n.toLocaleString('zh-Hans-CN') + ' 字';
-      rt.after(span);
-    };
-
-    whenDom(() => {
-      showWordCount();
-      // 正文是异步渲染的，晚一点再补一次
-      setTimeout(showWordCount, 1500);
-      setTimeout(showWordCount, 4000);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeViewer();
     });
   }
 
@@ -959,127 +849,5 @@ ${CFG.wideArticle ? `/* ---------- 1.4.1：文章正文放宽 ---------- */
       attachCopy();
       new MutationObserver(kickCopy).observe(document.body, { childList: true, subtree: true });
     });
-  }
-
-  /* ---------- 页面跳转（列表页） ---------- */
-  // 首页 / Matrix / 作者主页 / 搜索页都是无限滚动或「加载更多」，想看旧文章只能一直往下翻。
-  // 这里在右下角加一个悬浮控件：显示当前已加载到第几页，输页码跳到指定页，或一次加载 10 页。
-  // 「页」按每批的数量算：首屏有几条，一页就是几条；跳到第 N 页就是滚到第 (N-1)*每页条数 条。
-  if (CFG.pageJump) {
-    const PAGEJUMP_ID = 'sspai-tidy-pagejump';
-
-    const isListPage = () => {
-      const p = location.pathname;
-      return p === '/' || p.startsWith('/feed') || p.startsWith('/matrix') || p.startsWith('/u/') || p.startsWith('/search');
-    };
-
-    // 各列表页的条目选择器
-    const getItems = () => {
-      const p = location.pathname;
-      if (p === '/' || p.startsWith('/feed')) return [...document.querySelectorAll('.feed .article__card')];
-      if (p.startsWith('/matrix')) return [...document.querySelectorAll('.posts-list .post-item')];
-      if (p.startsWith('/u/')) return [...document.querySelectorAll('.user__content__card, .feed .article__card')];
-      if (p.startsWith('/search')) return [...document.querySelectorAll('.page__search .module__list__slot')];
-      return [];
-    };
-
-    let pageSize = 10; // 每页条数，默认 10；等首批条目出现后按实际数量修正
-    let pageSizeFixed = false;
-    let loading = false;
-
-    const fixPageSize = () => {
-      if (pageSizeFixed) return;
-      const n = getItems().length;
-      if (n > 0) { pageSize = n; pageSizeFixed = true; }
-    };
-
-    const triggerLoad = () => {
-      // Matrix 有「加载更多」按钮，直接点它
-      const btn = document.querySelector('.feed__load-more');
-      if (btn && btn.offsetParent !== null) { btn.click(); return; }
-      // 首页 / 作者页是无限滚动，滚到底触发加载
-      window.scrollTo(0, document.documentElement.scrollHeight);
-    };
-
-    const waitForMore = (before, timeout = 8000) => new Promise((resolve) => {
-      const t0 = Date.now();
-      const check = () => {
-        if (getItems().length > before) return resolve(true);
-        if (Date.now() - t0 > timeout) return resolve(false);
-        setTimeout(check, 300);
-      };
-      check();
-    });
-
-    const currentPage = () => Math.max(1, Math.ceil(getItems().length / pageSize));
-
-    // 一直加载，直到条目数够到第 target 页，或加载失败/超时/到头
-    const ensurePage = async (target) => {
-      for (let i = 0; i < 40; i++) {
-        const items = getItems();
-        if (items.length >= target * pageSize) return true;
-        const before = items.length;
-        triggerLoad();
-        const grew = await waitForMore(before);
-        if (!grew) return getItems().length >= target * pageSize;
-      }
-      return getItems().length >= target * pageSize;
-    };
-
-    const scrollToPage = (n) => {
-      const items = getItems();
-      const el = items[(n - 1) * pageSize] || items[items.length - 1];
-      if (!el) return;
-      el.scrollIntoView({ block: 'start' });
-      window.scrollBy(0, -70); // 留出顶栏高度
-    };
-
-    const buildPanel = () => {
-      if (document.getElementById(PAGEJUMP_ID)) return;
-      if (!isListPage()) return;
-      const panel = document.createElement('div');
-      panel.id = PAGEJUMP_ID;
-      panel.innerHTML = '<span>第 <b>1</b> 页</span><input type="number" min="1" value="1" aria-label="页码"><button type="button">跳转</button><button type="button">+10 页</button>';
-      const num = panel.querySelector('b');
-      const input = panel.querySelector('input');
-      const [jumpBtn, moreBtn] = panel.querySelectorAll('button');
-      const refresh = () => { fixPageSize(); num.textContent = String(currentPage()); };
-
-      jumpBtn.addEventListener('click', async () => {
-        if (loading) return;
-        const target = Math.max(1, parseInt(input.value, 10) || 1);
-        loading = true;
-        jumpBtn.disabled = true; moreBtn.disabled = true;
-        input.value = String(target);
-        await ensurePage(target);
-        scrollToPage(target);
-        refresh();
-        loading = false;
-        jumpBtn.disabled = false; moreBtn.disabled = false;
-      });
-      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') jumpBtn.click(); });
-
-      moreBtn.addEventListener('click', async () => {
-        if (loading) return;
-        const target = currentPage() + 10;
-        loading = true;
-        jumpBtn.disabled = true; moreBtn.disabled = true;
-        await ensurePage(target);
-        scrollToPage(target);
-        refresh();
-        loading = false;
-        jumpBtn.disabled = false; moreBtn.disabled = false;
-      });
-
-      document.body.appendChild(panel);
-      refresh();
-      // 滚动时顺手刷新页码（节流）
-      let raf = 0;
-      addEventListener('scroll', () => {
-        if (!raf) raf = requestAnimationFrame(() => { raf = 0; refresh(); });
-      }, { passive: true });
-    };
-
-    whenDom(buildPanel);
   }
 })();
