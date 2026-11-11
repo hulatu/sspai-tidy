@@ -4,7 +4,7 @@
 
 **一个 Tampermonkey 用户脚本，把 [sspai.com](https://sspai.com) 改成一个只用来读东西的地方。**
 
-[![version](https://img.shields.io/badge/version-1.3.0-1b1917?style=flat-square)](sspai-tidy.user.js)
+[![version](https://img.shields.io/badge/version-2.0.0-1b1917?style=flat-square)](sspai-tidy.user.js)
 [![platform](https://img.shields.io/static/v1?label=%E5%B9%B3%E5%8F%B0&message=sspai.com&color=d71a1b&style=flat-square)](https://sspai.com)
 [![userscript](https://img.shields.io/static/v1?label=%E7%B1%BB%E5%9E%8B&message=UserScript&color=2f7d5d&style=flat-square)](https://www.tampermonkey.net/)
 [![license](https://img.shields.io/static/v1?label=%E8%AE%B8%E5%8F%AF&message=MIT&color=1b1917&style=flat-square)](LICENSE)
@@ -23,7 +23,7 @@
 | --- | --- |
 | 它到底动了什么 | [🎯 一句话](#-一句话) ・ [📊 数字对比](#-数字对比) |
 | 文章页有什么变化 | [📖 文章页：读完就结束](#-文章页读完就结束) |
-| 1.3 新增了什么 | [✨ 新增的四件事](#-新增的四件事) |
+| 原站功能怎么保留 | [🧩 原生功能优先](#-原生功能优先) |
 | 怎么装 | [🚀 装法](#-装法) |
 | 想自己调 | [🎛 想微调](#-想微调) |
 | 坏了 / 不生效 | [⚠️ 注意](#-注意) |
@@ -32,7 +32,7 @@
 
 少数派的列表页把三分之二的屏幕给了轮播、侧栏和推广卡，文章页在正文之后又堆了近 2000px 的广告、打赏、评论和「关联阅读」。
 
-这个脚本把它们都拿掉，**一屏从 4 篇变成 9 篇，文章页读完正文就结束**；然后补上几个原站没有、但读长文很需要的小东西：进度条、点图放大、代码块复制、已读标记。
+这个脚本把它们都拿掉，**一屏从 4 篇变成 9 篇，文章页读完正文就结束**；同时保留少数派自己的目录、图片查看器、分享和评论入口，只额外补上阅读进度条、代码块复制和已读标记。
 
 ## 📊 数字对比
 
@@ -57,39 +57,42 @@
 | `.post__comments` | 237px | 讨论区（底部固定栏的评论按钮还能打开弹窗，不算丢了入口） |
 | `.related__read__wrapper` | 864px | 「关联阅读」 |
 | `.comment__footer__wrapper` ×7 | 392px | 正文每个章节末尾的「发表首评 + 表情」互动条 |
+| 文末推广句 ×2 | 约 64px | 「下载客户端 / 关注公众号」与「正版软件」推广 |
 
 **保留**：正文、文章标签与责编信息、目录、底部固定的「说点什么… / 分享」栏。
 
 ![文章页](screenshots/article.png)
 
-## ✨ 新增的四件事
+## 🧩 原生功能优先
 
-> 1.2 只有「减法」。1.3 补了四个「加法」——都是原站没有、但读长文会用到的。
+2.0 的核心原则是**只减少干扰，不接管原站交互**：
+
+| 原站功能 | 脚本怎么处理 |
+| --- | --- |
+| 文章目录 | 完全保留站方组件和固定按钮，不覆盖展开状态，也不自动代点 |
+| 图片查看器 | 不拦截图片点击；切换、缩略图、旋转、下载和 `Esc` 关闭都由原站处理 |
+| 分享 / 评论入口 | 保留底部固定栏；只是默认收起占用大块纵向空间的评论区 |
+| 登录、搜索、专题与标签 | 不修改 DOM，不屏蔽相关入口 |
+| 深色主题 | 只复用原站 CSS 变量，不写死背景或正文颜色 |
+
+原文中的付费声明、利益相关声明和产品信息不会被误删。脚本只隐藏明确指向广告、会员推广、客户端下载和商城的模块。
+
+## ✨ 保留的三项增强
 
 ### 📊 阅读进度条
 
 文章页顶部一条 2px 的红线，跟着滚动走。首页、Matrix、作者页不显示。
-滚到底时宽度到 100%，`requestAnimationFrame` 节流，不占主线程。
-
-### 🖼 点图放大
-
-原站的正文图**点不开**（页面上没有任何图片查看器）。现在点一下就是全屏黑底 + 原图：
-
-- 用的是 `data-original` 里的**原始尺寸**，不是正文那张 1120px 的压缩版
-- 再点图片在「适应屏幕 / 原始大小」之间切换
-- `Esc` 或点空白处关闭，打开时会锁住页面滚动
-
-![点图放大](screenshots/viewer.png)
+滚到底时宽度到 100%。滚动用 `requestAnimationFrame` 合并，图片加载和页面高度变化则由 `ResizeObserver` 触发，不再每 2 秒轮询。
 
 ### 📋 代码块复制
 
 正文里的 `<pre>` 右上角会出现一个「复制」按钮，悬停才显示，点一下变「已复制」。
-复制的是纯文本（不含按钮自己那两个字），优先走 `navigator.clipboard`，不行就退回 `execCommand`。
+复制的是纯文本（不含按钮自己那两个字），优先走 `navigator.clipboard`；权限不允许时自动退回 `execCommand`，失败会明确显示「复制失败」。
 
 ### ✅ 已读标记
 
 读过的文章，在首页 / Matrix / 作者页的列表里会**压暗到 48%**，鼠标悬停恢复原亮度。
-记录只写在你自己浏览器的 `localStorage`（`sspai-tidy:read`），最多存 400 条，不上传任何地方。
+记录只写在你自己浏览器的 `localStorage`（`sspai-tidy:read`），最多存 400 条，按最近访问排序。支持站内相对链接和绝对链接，不上传任何地方。
 
 ## 🚀 装法
 
@@ -127,10 +130,10 @@ const CFG = {
   hideArticleComments: true, // 讨论区
   hideArticleRelated:  true, // 「关联阅读」
   hideInlineComment:   true, // 正文各章节末尾的「发表首评」互动条
+  hideAppPromos:       true, // 文末的客户端 / 公众号 / 商城推广句
 
-  // ---- 文章页：加法（1.3 新增）----
+  // ---- 文章页：非侵入式增强 ----
   progressBar:   true,   // 顶部阅读进度条
-  imageViewer:   true,   // 点图放大（用原图）
   codeCopy:      true,   // 代码块右上角「复制」
   markRead:      true    // 列表里把读过的文章压暗
 };
@@ -143,6 +146,7 @@ const CFG = {
 - **想留评论区**（少数派的评论质量通常不错）：`hideArticleComments: false`
 - **不喜欢被压暗**：`markRead: false`（已经记下的条目不会被清掉）
 - **只想要阅读进度条**：把上面所有 `hide*` 都改成 `false`，只留 `progressBar: true`
+- **想保留站方推广句**：`hideAppPromos: false`
 
 ## 🚧 注意
 
@@ -151,13 +155,16 @@ const CFG = {
 - 作者页的跳转只在**进入主页那一刻**发生：进去之后再手动点「动态 / 收藏」，不会被抢回来。
 - 文章页那两个 `.article__subsection__wrapper` 只能清里面的内容块，**不能整个藏掉** —— 底部那条「说点什么…」固定栏的占位元素挂在里面，整块 `display:none` 会让那条栏塌成 0×0。脚本里已经按这个约束写了。
 - 站点把整列包在 `.feed__wrapper` 里，并写死 `max-width: 960px`；只改 `.feed` 会被它卡住（实测只能到 960 / 卡片 904），所以两个都要放开。
-- 脚本只改样式、点几下按钮、写一条本地的已读记录；**不碰登录态、不读你的数据、不发任何请求**。
+- Matrix 的 `.container` 规则通过当前 SPA 路由限定，只在 Matrix 页生效，避免误伤文章页或设置页。
+- 图片查看器和目录都完全交给原站。脚本不监听图片点击、不注册 `Esc`、不覆盖目录的展开样式。
+- 常驻轮询已经移除：页面更新用共享 `MutationObserver` 合并到每帧一次，阅读进度用滚动、`ResizeObserver` 和图片 `load` 事件驱动。
+- 脚本只改样式、触发「加载更多」、写一条本地已读记录；**不碰登录态、不读你的数据、不发任何网络请求**。
 
 ## 🧪 兼容性
 
 在 Chrome（Helium 157）+ Tampermonkey 下开发，1440×900 窗口实测；首页 / Matrix / 作者主页 / 文章页四条路径都验证过，含浅色与深色主题。
 
-用到的都是现代 CSS（`:has()`、`aspect-ratio`、CSS 变量），Chrome 105+ / Safari 15.4+ / Firefox 121+ 都没问题。
+用到的都是现代 CSS（`:has()`、`aspect-ratio`、CSS 变量），Chrome 105+ / Safari 15.4+ / Firefox 121+ 都没问题。2.0 已按当前站点的文章页重新核对目录、图片查看器、正文图片和广告选择器。
 
 深色主题下同样生效，颜色全部走站点自己的 CSS 变量：
 
