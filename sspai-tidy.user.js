@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         少数派 · 阅读增强
 // @namespace    local.sspai.tidy
-// @version      2.0.0
-// @description  保留少数派原有目录、图片查看器、分享与评论入口；清理广告位、推广卡、侧栏和正文后的干扰模块，并提供紧凑列表、阅读进度、代码复制与已读标记
+// @version      2.1.0
+// @description  保留少数派原有目录、图片查看器、分享与评论入口；清理广告位、推广卡、侧栏和正文后的干扰模块，并提供紧凑列表、阅读进度、代码复制、已读标记与返回位置恢复
 // @author       hulatu
 // @homepageURL  https://github.com/hulatu/sspai-tidy
 // @supportURL   https://github.com/hulatu/sspai-tidy/issues
@@ -53,8 +53,14 @@
     // 图片点击、目录展开、分享和底部评论栏全部交还给原站，脚本不再拦截或代点。
     progressBar:   true,   // 文章页顶部 2px 阅读进度条
     codeCopy:      true,   // 代码块右上角「复制」
-    markRead:      true    // 列表里把读过的文章压暗（记在 localStorage，只存最近 400 篇）
+    markRead:      true,   // 列表里标记读过的文章（记在 localStorage，只存最近 400 篇）
+    hideRead:      false,  // true = 已读文章直接从列表里消失（配合自动加载就是「只看没读过的」）
+    restoreScroll: true    // 从文章返回列表时回到上次读到的位置（只记本次标签页）
   };
+
+  /* 列表宽度：首页 / Matrix / 作者页三处共用，改一处即可 */
+  const FEED_MAX = 1120;
+  const FEED_PAD = 28;
 
   const thumbWidth = Math.max(0, Number(CFG.thumb) || 0);
   const thumbSide = CFG.thumbSide === 'right' ? 'right' : 'left';
@@ -110,13 +116,13 @@ ${CFG.hideAppPromos ? `/* 仅隐藏正文末尾明确指向客户端、公众号
 /* 整列外面还套了一层 .feed__wrapper，站点给它写了 max-width: 960px。
    只改 .feed 的话会被这层卡住（实测 960 / 卡片 904），必须一起放开 */
 .feed__wrapper {
-  max-width: 1120px !important;
+  max-width: ${FEED_MAX}px !important;
 }
 .feed {
   width: 100% !important;
-  max-width: 1120px !important;
+  max-width: ${FEED_MAX}px !important;
   margin: 0 auto !important;
-  padding: 0 28px !important;
+  padding: 0 ${FEED_PAD}px !important;
   box-sizing: border-box !important;
 }
 .feed__main {
@@ -181,14 +187,14 @@ ${CFG.hideAppPromos ? `/* 仅隐藏正文末尾明确指向客户端、公众号
    深浅色主题都会自动跟着切，不用写死颜色 */
 .article__card--important .article__card__title,
 .article__card--important .article__card__title--important {
-  color: var(--B8-t) !important;
+  color: var(--B8-t, #1a1a1a) !important;
 }
 .article__card--important .article__card__meta,
 .article__card--important .article__card__author,
 .article__card--important .article__card__author__name,
 .article__card--important .article__card__publish,
 .article__card--important .article__card__summary {
-  color: var(--B6-t) !important;
+  color: var(--B6-t, #6a6a6a) !important;
   opacity: 1 !important;
 }
 /* 摘要保留，但压成一行、小一号，不额外撑高行 */
@@ -236,8 +242,8 @@ ${thumbWidth > 0 ? `
 /* ---------- Matrix（只在 Matrix 路由生效，避免误伤文章和设置页的 .container） ---------- */
 html[data-sspai-tidy-page="matrix"] .container {
   width: 100% !important;
-  max-width: 1120px !important;
-  padding: 0 28px !important;
+  max-width: ${FEED_MAX}px !important;
+  padding: 0 ${FEED_PAD}px !important;
   box-sizing: border-box !important;
 }
 html[data-sspai-tidy-page="matrix"] main.main-container {
@@ -246,22 +252,25 @@ html[data-sspai-tidy-page="matrix"] main.main-container {
   max-width: none !important;
   padding: 0 !important;
 }
-.posts-list,
-.posts-list-item {
+/* 下面这几条和上面的 .container 一样只在 Matrix 生效：
+   同样的 .post-title / .post-cover 在搜索结果和标签页里也有，
+   不加限定会把那些页面的字号和缩略图一起改掉 */
+html[data-sspai-tidy-page="matrix"] .posts-list,
+html[data-sspai-tidy-page="matrix"] .posts-list-item {
   width: 100% !important;
 }
-.post-item.defalut {
+html[data-sspai-tidy-page="matrix"] .post-item.defalut {
   padding: ${CFG.compact ? '12px 16px' : '18px 18px 18px 20px'} !important;
   margin: 0 !important;
 }
-.posts-list-item {
+html[data-sspai-tidy-page="matrix"] .posts-list-item {
   margin: 0 !important;
 }
-.post-title {
+html[data-sspai-tidy-page="matrix"] .post-title {
   font-size: ${CFG.compact ? '16px' : '18px'} !important;
   line-height: ${CFG.compact ? '1.5' : '1.6'} !important;
 }
-.post-cover {
+html[data-sspai-tidy-page="matrix"] .post-cover {
   flex: 0 0 auto !important;
   ${thumbWidth > 0 ? `width: ${Math.round(thumbWidth * 0.94)}px !important;
   height: ${Math.round(thumbWidth * 0.53)}px !important;` : 'display: none !important;'}
@@ -269,7 +278,7 @@ html[data-sspai-tidy-page="matrix"] main.main-container {
   border-radius: 4px !important;
   ${thumbWidth > 0 && thumbSide === 'left' ? 'order: -1 !important; margin: 0 20px 0 0 !important;' : ''}
 }
-.post-item-bottom {
+html[data-sspai-tidy-page="matrix"] .post-item-bottom {
   margin-top: ${CFG.compact ? '6px' : '12px'} !important;
 }
 ${CFG.userWide ? `
@@ -284,11 +293,11 @@ ${CFG.userWide ? `
 .page__profile .view__wrapper,
 .page__profile .custom__tabs {
   width: 100% !important;
-  max-width: 1120px !important;
+  max-width: ${FEED_MAX}px !important;
   margin-left: auto !important;
   margin-right: auto !important;
-  padding-left: 28px !important;
-  padding-right: 28px !important;
+  padding-left: ${FEED_PAD}px !important;
+  padding-right: ${FEED_PAD}px !important;
   box-sizing: border-box !important;
 }
 .page__profile .user__updates__view {
@@ -367,7 +376,7 @@ ${CFG.userWide ? `
   font-size: ${CFG.compact ? '16px' : '18px'} !important;
   line-height: ${CFG.compact ? '1.55' : '1.6'} !important;
   font-weight: 500 !important;
-  color: var(--B8-t) !important;
+  color: var(--B8-t, #1a1a1a) !important;
   display: -webkit-box !important;
   -webkit-line-clamp: 2 !important;
   -webkit-box-orient: vertical !important;
@@ -404,7 +413,7 @@ ${CFG.userWide ? `
   margin: ${CFG.compact ? '6px' : '10px'} 0 0 !important;
   font-size: 13px !important;
   font-weight: 400 !important;
-  color: var(--B6-t) !important;
+  color: var(--B6-t, #6a6a6a) !important;
   justify-content: flex-start !important;
 }
 .page__profile .user__update__item__type > span:not(.user__update__item__date) {
@@ -412,7 +421,7 @@ ${CFG.userWide ? `
 }
 .page__profile .user__update__item__date {
   font-size: 13px !important;
-  color: var(--B6-t) !important;
+  color: var(--B6-t, #6a6a6a) !important;
 }
 /* 日期行缩进到标题正下方，不要贴在缩略图底下 */
 .page__profile .user__update__item__type:has(~ .user__update__item__card .user__content__card__image) {
@@ -432,12 +441,17 @@ ${CFG.userWide ? `
   top: 0;
   left: 0;
   height: 2px;
-  width: 0;
+  width: 100%;
   background: #e0342b;
   opacity: 0;
   z-index: 2147483000;
   pointer-events: none;
-  transition: width .1s linear, opacity .2s;
+  /* 用 transform 而不是 width：宽度动画每帧都要重新布局，
+     滚动时正好是最忙的时候；scaleX 只走合成层，代价可以忽略 */
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  transition: transform .1s linear, opacity .2s;
+  will-change: transform;
 }
 
 /* ---------- 原生图片查看器 ---------- */
@@ -459,7 +473,7 @@ ${CFG.userWide ? `
   font: inherit;
   font-size: 12px;
   line-height: 20px;
-  color: var(--B8-t);
+  color: var(--B8-t, #1a1a1a);
   background: rgba(128, 128, 128, .14);
   border: none;
   border-radius: 4px;
@@ -471,15 +485,58 @@ ${CFG.userWide ? `
 .sspai-tidy-copy:focus-visible {
   opacity: 1;
 }
+/* 触摸设备没有 hover：按钮否则永远不出现（点一下只会闪一下） */
+@media (hover: none) {
+  .sspai-tidy-copy { opacity: 1; }
+}
 
-/* ---------- 已读标记 ---------- */
-.sspai-tidy-read {
-  opacity: .48;
+@media (prefers-reduced-motion: reduce) {
+  #sspai-tidy-progress,
+  .sspai-tidy-copy,
+  .sspai-tidy-read .article__card__meta,
+  .sspai-tidy-read .article__card__summary,
+  .sspai-tidy-read .article__card__cover,
+  .sspai-tidy-read .post-cover,
+  .sspai-tidy-read .user__content__card__right,
+  .sspai-tidy-read .user__update__item__type {
+    transition: none;
+  }
+}
+
+/* ---------- 已读标记 ----------
+   以前是整卡 opacity: .48。按浅色主题的正文色算，标题会落到 2.7–3.2:1，
+   低于 AA 的 4.5:1 —— 想「扫一眼看清但不再吸引我」的需求没达成，反而先看不清了。
+   现在改成：标题降到次要灰（约 5.4:1，仍过 AA），元信息、摘要和缩略图压到 55%。
+   视觉上照样一眼分出读没读过，扫读和读屏都不吃亏。 */
+.sspai-tidy-read .article__card__title,
+.sspai-tidy-read .post-title,
+.sspai-tidy-read .user__content__card__title {
+  color: var(--B6-t, #6a6a6a) !important;
+}
+.sspai-tidy-read .article__card__meta,
+.sspai-tidy-read .article__card__summary,
+.sspai-tidy-read .article__card__cover,
+.sspai-tidy-read .post-cover,
+.sspai-tidy-read .user__content__card__right,
+.sspai-tidy-read .user__update__item__type {
+  opacity: .55;
   transition: opacity .15s;
 }
-.sspai-tidy-read:hover {
+.sspai-tidy-read:hover .article__card__title,
+.sspai-tidy-read:hover .post-title,
+.sspai-tidy-read:hover .user__content__card__title {
+  color: var(--B8-t, #1a1a1a) !important;
+}
+.sspai-tidy-read:hover .article__card__meta,
+.sspai-tidy-read:hover .article__card__summary,
+.sspai-tidy-read:hover .article__card__cover,
+.sspai-tidy-read:hover .post-cover,
+.sspai-tidy-read:hover .user__content__card__right,
+.sspai-tidy-read:hover .user__update__item__type {
   opacity: 1;
 }
+${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加载」就是一个只看新文章的信息流 */
+.sspai-tidy-read { display: none !important; }` : ''}
 `;
 
   /* ================================================================
@@ -610,14 +667,22 @@ ${CFG.userWide ? `
      ================================================================ */
   if (CFG.autoLoad) {
     let lastClick = 0;
+    let lastCount = -1;
     let bound = null;
 
+    const itemCount = () =>
+      document.querySelectorAll('.posts-list-item, .article__card').length;
+
     function clickMore() {
-      // 只防「连点」，不拿数量做门槛：数量在按钮点下去之前是不会变的
-      if (Date.now() - lastClick < 900) return;
       const btn = document.querySelector('.button-show-more');
       if (!btn) return;
+      // 光靠时间节流不够：站点在「加载中」常常把按钮整块重建，新节点一进视口
+      // 就会触发一次 IntersectionObserver 的初始回调，慢网下会连着点两三次。
+      // 用「列表条数有没有长」来判上一次请求回没回来 —— 没长说明还在加载。
+      const count = itemCount();
+      if (Date.now() - lastClick < 900 && count <= lastCount) return;
       lastClick = Date.now();
+      lastCount = count;
       btn.click();
     }
 
@@ -641,6 +706,7 @@ ${CFG.userWide ? `
           io.unobserve(bound);
           bound = null;
         }
+        lastCount = -1;
         bindMore();
       });
       bindMore();
@@ -663,7 +729,7 @@ ${CFG.userWide ? `
     //    这时前端路由还没初始化，改完它就直接按文章页渲染 —— 不闪、不多一次请求
     const boot = location.pathname.match(RE_ROOT);
     if (boot) {
-      try { history.replaceState(history.state, '', '/u/' + boot[1] + '/posts' + location.search); } catch (e) {}
+      try { history.replaceState(history.state, '', '/u/' + boot[1] + '/posts' + location.search + location.hash); } catch (e) {}
     }
 
     // ② 点作者头像进来（SPA 软导航）时补一刀：
@@ -690,18 +756,22 @@ ${CFG.userWide ? `
       return false;
     }
 
-    function fix(tries) {
-      tries = tries || 0;
-      // 直接落在 /u/:id/posts（比如刷新页面）时，标签文案也补一下
-      if (RE_POST.test(location.pathname)) {
-        setTimeout(syncTabLabel, 600);
-        return;
-      }
+    /**
+     * 落到作者主页时把「文章」挑出来。
+     *
+     * 早先是 8 次 × 400ms 的 setTimeout 轮询，只为等下拉渲染出来。页面本来就有
+     * 一条「每帧合并一次」的 DOM 通知，直接用它：路由变了先试一次，之后只要 DOM
+     * 有变化就再试，直到点中或用户自己点了别的标签。1.5 秒的间隔只防连点 ——
+     * 下拉一旦出现，下一帧就会点上，比固定 400ms 更快也更省。
+     */
+    let clickedAt = 0;
+
+    function fix() {
       const m = location.pathname.match(RE_ROOT) || location.pathname.match(RE_UPD);
       if (!m) return;
       if (seen.has(m[1])) return;                 // 用户自己点过「动态」，别抢
-      if (clickPostsFilter()) return;
-      if (tries < 8) setTimeout(() => fix(tries + 1), 400);   // 下拉还没渲染出来
+      if (Date.now() - clickedAt < 1500) return;
+      if (clickPostsFilter()) clickedAt = Date.now();
     }
 
     function mark() {
@@ -709,13 +779,14 @@ ${CFG.userWide ? `
       if (m) seen.add(m[1]);
     }
 
-    let timer = null;
-    function schedule() {
-      clearTimeout(timer);
-      timer = setTimeout(() => { fix(); mark(); }, 500);
-    }
-
-    onRoute(schedule);
+    // 标签文案只在「路由刚变」时补一次：这条路径放在 DOM 通知里会被每帧排一个定时器
+    onRoute(() => {
+      if (RE_POST.test(location.pathname)) setTimeout(syncTabLabel, 600);
+      fix();
+      mark();
+    });
+    // 下拉是异步渲染的，DOM 一有变化就再试一次；fix() 自己会早退，不会空转
+    onDomChange(() => { if (location.pathname.startsWith('/u/')) fix(); });
   }
 
   /* ================================================================
@@ -737,6 +808,7 @@ ${CFG.userWide ? `
   if (CFG.progressBar) {
     const bar = document.createElement('div');
     bar.id = 'sspai-tidy-progress';
+    bar.setAttribute('aria-hidden', 'true');
     whenRoot(() => document.documentElement.appendChild(bar));
 
     let raf = 0;
@@ -744,13 +816,13 @@ ${CFG.userWide ? `
       raf = 0;
       if (!isPostPage()) {
         bar.style.opacity = '0';
-        bar.style.width = '0';
+        bar.style.transform = 'scaleX(0)';
         return;
       }
       const el = document.documentElement;
       const max = el.scrollHeight - el.clientHeight;
       const p = max > 0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
-      bar.style.width = (p * 100).toFixed(2) + '%';
+      bar.style.transform = 'scaleX(' + p.toFixed(4) + ')';
       bar.style.opacity = '1';
     };
     const kick = () => { if (!raf) raf = requestAnimationFrame(update); };
@@ -791,7 +863,8 @@ ${CFG.userWide ? `
     } catch (e) { /* 隐私模式下 localStorage 会抛，忽略 */ }
   };
 
-  if (CFG.markRead) {
+  // hideRead 靠同一套记录工作：只开 hideRead 也得继续记和画
+  if (CFG.markRead || CFG.hideRead) {
     const paint = () => {
       const ids = readSet();
       if (!ids.size) return;
@@ -817,6 +890,69 @@ ${CFG.userWide ? `
     });
   }
 
+  /* ---------- 返回列表时回到原位置 ----------
+     —— 只写 sessionStorage：关掉标签页就该忘，也不该在别的标签页里串味。
+        只对列表页生效（首页 / feed / Matrix / 搜索 / 作者页），文章页不记录。 */
+  if (CFG.restoreScroll) {
+    const SCROLL_KEY = 'sspai-tidy:scroll';
+    const MAX_AGE = 10 * 60 * 1000;
+    const isListPage = () => /^\/($|feed|matrix|search|u\/)/.test(location.pathname);
+    const keyOf = () => location.pathname + location.search;
+
+    const readAll = () => {
+      try {
+        const v = JSON.parse(sessionStorage.getItem(SCROLL_KEY) || '{}');
+        return v && typeof v === 'object' ? v : {};
+      } catch (e) { return {}; }
+    };
+
+    let saveTimer = 0;
+    const save = () => {
+      if (!isListPage()) return;
+      try {
+        const all = readAll();
+        all[keyOf()] = { y: Math.round(window.scrollY), t: Date.now() };
+        sessionStorage.setItem(SCROLL_KEY, JSON.stringify(all));
+      } catch (e) { /* 隐私模式：记不住也不影响阅读 */ }
+    };
+
+    addEventListener('scroll', () => {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(save, 300);
+    }, { passive: true });
+    // 点链接的那一下先把位置落盘：滚动防抖还没到点就跳走的话，记下的是旧位置
+    document.addEventListener('click', (e) => {
+      if (e.target.closest && e.target.closest('a')) save();
+    }, true);
+    addEventListener('pagehide', save);
+
+    /**
+     * 列表是异步渲染的：刚进页面时高度还不够，直接 scrollTo 会被截断。
+     * 每 80ms 看一眼高度够没够，够了一次性落位；最多等 2 秒。
+     */
+    const restore = () => {
+      if (!isListPage()) return;
+      const rec = readAll()[keyOf()];
+      if (!rec || typeof rec.y !== 'number') return;
+      // 十分钟前的旧位置就别跳了 —— 那时候你可能早就换了一篇文章在读
+      if (Date.now() - (rec.t || 0) > MAX_AGE) return;
+      const target = rec.y;
+      if (target < 200) return;
+      let tries = 0;
+      const tick = () => {
+        const max = document.documentElement.scrollHeight - window.innerHeight;
+        if (max >= target - 4 || tries++ > 25) {
+          window.scrollTo(0, Math.min(target, Math.max(0, max)));
+          return;
+        }
+        setTimeout(tick, 80);
+      };
+      tick();
+    };
+
+    onRoute(() => setTimeout(restore, 80));
+  }
+
   /* ---------- 代码块复制 ---------- */
   if (CFG.codeCopy) {
     const fallbackCopy = (text) => {
@@ -840,16 +976,27 @@ ${CFG.userWide ? `
       }, 1400);
     };
 
-    const copyText = async (text, btn) => {
-      let ok = false;
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        try {
-          await navigator.clipboard.writeText(text);
-          ok = true;
-        } catch (e) {}
+    /**
+     * 复制一段文本。
+     *
+     * 先走同步通道：execCommand 在点击手势里一次就落地，不受焦点和权限影响。
+     * 只有它不可用才退到异步 clipboard —— 反过来写（先 await clipboard、失败再回退）
+     * 的话，await 之后已经不在用户手势里了，Safari 会直接拒绝 execCommand，
+     * 用户看到「复制失败」，而剪贴板里留的还是上一次的内容。
+     */
+    const copyText = (text, btn) => {
+      if (fallbackCopy(text)) {
+        showResult(btn, true);
+        return;
       }
-      if (!ok) ok = fallbackCopy(text);
-      showResult(btn, ok);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(
+          () => showResult(btn, true),
+          () => showResult(btn, false),
+        );
+        return;
+      }
+      showResult(btn, false);
     };
 
     const attachCopy = () => {
@@ -873,6 +1020,12 @@ ${CFG.userWide ? `
         });
 
         pre.appendChild(btn);
+
+        // 代码块自己横向滚动时（长行很常见），绝对定位的按钮会跟着内容一起滚走。
+        // 反向补一个 translateX 把它钉在右上角；不滚动时 scrollLeft 恒为 0，没有副作用。
+        const sync = () => { btn.style.transform = 'translateX(' + pre.scrollLeft + 'px)'; };
+        pre.addEventListener('scroll', sync, { passive: true });
+        sync();
       }
     };
 
