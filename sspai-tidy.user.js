@@ -221,7 +221,8 @@ ${(CFG.hideArticleComments || CFG.hideArticleRelated) ? `.article__subsection__w
    所以这里连阴影和毛玻璃一起关掉 */
 .comp__ArticleStickyBar__wrapper,
 .article__bar__inner {
-  background: transparent !important;
+  background-color: var(--sspai-tidy-bar-bg, transparent) !important;
+  background-image: none !important;
   box-shadow: none !important;
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
@@ -664,33 +665,68 @@ ${CFG.userWide ? `
 ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加载」就是一个只看新文章的信息流 */
 .sspai-tidy-read { display: none !important; }` : ''}
 
-/* ---------- 列表工具条 ----------
-   不做通栏横条：通栏会多出一条分隔线把列表切开，还和站点自己的「排序 / 标签」栏
-   抢位置。改成贴在列表右上角的一小排胶囊 —— 默认只占一个搜索胶囊的宽度，
-   聚焦后才展开；没有过滤条件时连计数都不显示。
-   颜色全部走半透明灰，深浅主题自适应，不写死任何色值 */
-.sspai-tidy-tools {
-  position: relative;
+/* ---------- 列表过滤：右下角悬浮面板 ----------
+   最初做成列表顶部的横条，两个问题：它要插进文档流，等列表渲染完才出现，
+   页面会往下跳一格；而且横条和站点自己的「排序 / 标签」栏挤在同一块。
+   现在改成右下角的悬浮按钮 + 点开的浮层：完全不进文档流，永远不会让页面跳动。
+   位置放在站点「返回顶部」按钮上方（站点那条在 right:32 / bottom:32）。 */
+.sspai-tidy-fab-wrap {
+  position: fixed;
+  right: 24px;
+  bottom: 92px;
+  z-index: 2147482000;
+  display: none;
+  font-size: 12px;
+}
+.sspai-tidy-fab-wrap.on {
+  display: block;
+}
+.sspai-tidy-fab {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 0 0 10px;
+  gap: 5px;
+  padding: 7px 12px;
+  font: inherit;
   font-size: 12px;
+  color: var(--B6-t, #6a6a6a);
+  background: rgba(128, 128, 128, .14);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid rgba(128, 128, 128, .18);
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .12);
+}
+.sspai-tidy-fab:hover,
+.sspai-tidy-fab[aria-expanded="true"],
+.sspai-tidy-fab.has-filter {
+  color: var(--B8-t, #1a1a1a);
+  border-color: rgba(128, 128, 128, .4);
+}
+.sspai-tidy-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  width: 280px;
+  max-width: 86vw;
+  padding: 10px;
+  background: rgba(128, 128, 128, .16);
+  -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  backdrop-filter: blur(20px) saturate(1.5);
+  border: 1px solid rgba(128, 128, 128, .22);
+  border-radius: 12px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, .18);
+}
+.sspai-tidy-panel[hidden] {
+  display: none;
 }
 .sspai-tidy-search {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 132px;
-  padding: 5px 12px;
-  background: rgba(128, 128, 128, .1);
-  border-radius: 999px;
-  transition: width .18s ease, background .18s ease;
-}
-.sspai-tidy-search:focus-within {
-  width: 240px;
-  background: rgba(128, 128, 128, .16);
+  padding: 6px 10px;
+  background: rgba(128, 128, 128, .14);
+  border-radius: 8px;
 }
 .sspai-tidy-search-icon {
   flex: 0 0 auto;
@@ -708,12 +744,18 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
   border: none;
   outline: none;
 }
-/* 去掉 type=search 自带的那个小叉，和胶囊的圆角对不上 */
+/* 去掉 type=search 自带的那个小叉，和圆角对不上 */
 .sspai-tidy-filter-input::-webkit-search-cancel-button {
   -webkit-appearance: none;
 }
+.sspai-tidy-panel-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
 .sspai-tidy-filter-count {
-  flex: 0 0 auto;
   color: var(--B6-t, #6a6a6a);
   font-variant-numeric: tabular-nums;
 }
@@ -722,11 +764,11 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
 }
 .sspai-tidy-filter-btn {
   flex: 0 0 auto;
-  padding: 5px 12px;
+  padding: 4px 10px;
   font: inherit;
   font-size: 12px;
   color: var(--B6-t, #6a6a6a);
-  background: rgba(128, 128, 128, .1);
+  background: rgba(128, 128, 128, .14);
   border: none;
   border-radius: 999px;
   cursor: pointer;
@@ -735,29 +777,13 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
 .sspai-tidy-filter-btn:hover,
 .sspai-tidy-filter-btn[aria-expanded="true"] {
   color: var(--B8-t, #1a1a1a);
-  background: rgba(128, 128, 128, .18);
+  background: rgba(128, 128, 128, .22);
 }
-@media (max-width: 640px) {
-  .sspai-tidy-search {
-    flex: 1 1 auto;
-    width: auto;
-  }
-}
-
+/* 屏蔽名单是浮层里的第二块，跟着面板走，不再自己绝对定位 */
 .sspai-tidy-blocked {
-  position: absolute;
-  top: calc(100% + 2px);
-  right: 0;
-  z-index: 2147482000;
-  width: 300px;
-  max-width: 88vw;
-  padding: 12px;
-  background: rgba(128, 128, 128, .14);
-  -webkit-backdrop-filter: blur(18px) saturate(1.5);
-  backdrop-filter: blur(18px) saturate(1.5);
-  border: 1px solid rgba(128, 128, 128, .22);
-  border-radius: 10px;
-  box-shadow: 0 14px 34px rgba(0, 0, 0, .18);
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(128, 128, 128, .18);
 }
 .sspai-tidy-blocked[hidden] {
   display: none;
@@ -1384,20 +1410,23 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
   }
 
   /* ================================================================
-     列表过滤：关键词 + 屏蔽名单
+     列表过滤：右下角悬浮面板
      —— 名单里每一条就是一段普通子串，同时比对标题、作者和摘要。
         作者名本来就出现在卡片文字里，所以「屏蔽某个作者」和「屏蔽某个关键词」
         是同一套机制，不用为作者单独开数据结构。
         名单存在 GM 存储里（没有 GM 就退回 localStorage），下次打开还在。
+     —— 界面不进列表流：做成 fixed 定位的悬浮按钮 + 浮层，文档流里一行都不占。
+        之前那版插在列表顶部的横条要等列表渲染完才出现，会把整列往下推一截，
+        页面看起来就是「加载时跳了一下」。
      ================================================================ */
   if (CFG.filterBar) {
     const BLOCK_KEY = 'sspai-tidy:blocked';
     const CARD_SEL = '.article__card, .posts-list-item, .user__update__item__wrapper';
-    const HOST_SEL = '.feed__main, .posts-list, .user__updates__view';
 
     let blocked = storeGet(BLOCK_KEY, []);
     if (!Array.isArray(blocked)) blocked = [];
     let query = '';
+    let ui = null;
 
     const allCards = () => [...document.querySelectorAll(CARD_SEL)];
 
@@ -1415,24 +1444,28 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
         card.classList.toggle('sspai-tidy-hidden', hide);
         if (!hide) shown++;
       }
+      if (!ui) return;
       // 没有过滤条件时不显示「40 / 40」这种废话
-      const count = document.querySelector('.sspai-tidy-filter-count');
-      if (count) count.textContent = shown === cards.length ? '' : shown + ' / ' + cards.length;
+      ui.count.textContent = shown === cards.length ? '' : shown + ' / ' + cards.length;
     };
 
     const refreshLabel = () => {
-      const btn = document.querySelector('.sspai-tidy-filter-btn');
-      if (btn) btn.textContent = blocked.length ? '屏蔽 ' + blocked.length : '屏蔽';
+      if (!ui) return;
+      const active = !!query || blocked.length > 0;
+      ui.toggle.textContent = blocked.length ? '屏蔽 ' + blocked.length : '屏蔽';
+      ui.fab.textContent = active ? '过滤中' : '过滤';
+      ui.fab.classList.toggle('has-filter', active);
     };
 
-    const renderBlocked = (list) => {
+    const renderBlocked = () => {
+      if (!ui) return;
       refreshLabel();
-      list.textContent = '';
+      ui.list.textContent = '';
       if (!blocked.length) {
         const li = document.createElement('li');
         li.className = 'sspai-tidy-blocked-empty';
         li.textContent = '还没有屏蔽任何词';
-        list.appendChild(li);
+        ui.list.appendChild(li);
         return;
       }
       for (const term of blocked) {
@@ -1446,108 +1479,180 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
         del.addEventListener('click', () => {
           blocked = blocked.filter((t) => t !== term);
           storeSet(BLOCK_KEY, blocked);
-          renderBlocked(list);
+          renderBlocked();
           apply();
         });
         li.append(span, del);
-        list.appendChild(li);
+        ui.list.appendChild(li);
       }
     };
 
-    const addBlocked = (value, input, list) => {
+    const addBlocked = (value) => {
       const term = String(value || '').trim();
       if (!term) return;
       if (!blocked.some((t) => t.toLowerCase() === term.toLowerCase())) {
         blocked = blocked.concat(term);
         storeSet(BLOCK_KEY, blocked);
-        renderBlocked(list);
+        renderBlocked();
         apply();
       }
-      input.value = '';
-      input.focus();
+      ui.bInput.value = '';
+      ui.bInput.focus();
     };
 
-    /** 名单只建一次；站点重渲染把整块删掉了才重建 */
-    const ensureBar = () => {
-      const host = document.querySelector(HOST_SEL);
-      if (!host) return;
-      let bar = document.querySelector('.sspai-tidy-tools');
-      if (bar && host.contains(bar)) {
-        apply();
-        return;
-      }
-      if (bar) bar.remove();
+    const closePanel = () => {
+      if (!ui) return;
+      ui.panel.hidden = true;
+      ui.fab.setAttribute('aria-expanded', 'false');
+    };
 
-      bar = document.createElement('div');
-      bar.className = 'sspai-tidy-tools';
-      bar.innerHTML =
+    const build = () => {
+      if (ui) return ui;
+      const wrap = document.createElement('div');
+      wrap.className = 'sspai-tidy-fab-wrap';
+      wrap.innerHTML =
+        '<button class="sspai-tidy-fab" type="button" aria-expanded="false" aria-label="过滤文章列表">过滤</button>' +
+        '<div class="sspai-tidy-panel" hidden aria-label="过滤与屏蔽">' +
         '<label class="sspai-tidy-search">' +
         '<svg class="sspai-tidy-search-icon" width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">' +
         '<circle cx="7" cy="7" r="4.4" fill="none" stroke="currentColor" stroke-width="1.5"></circle>' +
         '<path d="M10.4 10.4 L14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>' +
         '</svg>' +
-        '<input class="sspai-tidy-filter-input" type="search" placeholder="过滤列表" aria-label="过滤文章列表">' +
+        '<input class="sspai-tidy-filter-input" type="search" placeholder="标题 / 作者 / 关键词" aria-label="过滤文章列表">' +
         '</label>' +
+        '<div class="sspai-tidy-panel-foot">' +
         '<span class="sspai-tidy-filter-count"></span>' +
         '<button class="sspai-tidy-filter-btn" type="button" aria-expanded="false">屏蔽</button>' +
+        '</div>' +
         '<div class="sspai-tidy-blocked" hidden>' +
         '<div class="sspai-tidy-blocked-row">' +
         '<input class="sspai-tidy-blocked-input" type="text" placeholder="作者名或关键词" aria-label="要屏蔽的词">' +
         '<button class="sspai-tidy-blocked-add" type="button">添加</button>' +
-        '</div><ul class="sspai-tidy-blocked-list"></ul></div>';
-      host.insertBefore(bar, host.firstChild);
+        '</div><ul class="sspai-tidy-blocked-list"></ul></div>' +
+        '</div>';
+      (document.body || document.documentElement).appendChild(wrap);
 
-      const input = bar.querySelector('.sspai-tidy-filter-input');
-      const panel = bar.querySelector('.sspai-tidy-blocked');
-      const list = bar.querySelector('.sspai-tidy-blocked-list');
-      const toggle = bar.querySelector('.sspai-tidy-filter-btn');
-      const bInput = bar.querySelector('.sspai-tidy-blocked-input');
-      const bAdd = bar.querySelector('.sspai-tidy-blocked-add');
+      const q = (sel) => wrap.querySelector(sel);
+      ui = {
+        wrap,
+        fab: q('.sspai-tidy-fab'),
+        panel: q('.sspai-tidy-panel'),
+        input: q('.sspai-tidy-filter-input'),
+        count: q('.sspai-tidy-filter-count'),
+        toggle: q('.sspai-tidy-filter-btn'),
+        list: q('.sspai-tidy-blocked-list'),
+        blockedBox: q('.sspai-tidy-blocked'),
+        bInput: q('.sspai-tidy-blocked-input'),
+        bAdd: q('.sspai-tidy-blocked-add'),
+      };
+
+      ui.fab.addEventListener('click', () => {
+        const open = ui.panel.hidden;
+        ui.panel.hidden = !open;
+        ui.fab.setAttribute('aria-expanded', String(open));
+        if (open) ui.input.focus();
+      });
 
       // 站点有自己的键盘快捷键，输入框里敲字不该触发它们
-      for (const el of [input, bInput]) {
+      for (const el of [ui.input, ui.bInput]) {
         el.addEventListener('keydown', (e) => {
           e.stopPropagation();
-          if (e.key === 'Enter' && el === bInput) addBlocked(bInput.value, bInput, list);
-          if (e.key === 'Escape') { el.blur(); panel.hidden = true; toggle.setAttribute('aria-expanded', 'false'); }
+          if (e.key === 'Enter' && el === ui.bInput) addBlocked(ui.bInput.value);
+          if (e.key === 'Escape') { el.blur(); closePanel(); }
         });
       }
 
-      input.addEventListener('input', () => { query = input.value; apply(); });
-      if (query) input.value = query;
-
-      toggle.addEventListener('click', () => {
-        panel.hidden = !panel.hidden;
-        toggle.setAttribute('aria-expanded', String(!panel.hidden));
-        if (!panel.hidden) bInput.focus();
+      ui.input.addEventListener('input', () => {
+        query = ui.input.value;
+        apply();
+        refreshLabel();
       });
-      bAdd.addEventListener('click', () => addBlocked(bInput.value, bInput, list));
 
-      renderBlocked(list);
+      ui.toggle.addEventListener('click', () => {
+        ui.blockedBox.hidden = !ui.blockedBox.hidden;
+        ui.toggle.setAttribute('aria-expanded', String(!ui.blockedBox.hidden));
+        if (!ui.blockedBox.hidden) ui.bInput.focus();
+      });
+
+      ui.bAdd.addEventListener('click', () => addBlocked(ui.bInput.value));
+
+      renderBlocked();
       refreshLabel();
+      return ui;
+    };
+
+    // 点浮层和按钮以外的地方收起（capture 阶段，先于站点自己的点击处理）
+    document.addEventListener('click', (e) => {
+      if (!ui || ui.panel.hidden) return;
+      if (ui.wrap.contains(e.target)) return;
+      closePanel();
+    }, true);
+
+    const sync = () => {
+      const bar = build();
+      const hasCards = allCards().length > 0;
+      bar.wrap.classList.toggle('on', hasCards);
+      if (!hasCards) closePanel();
       apply();
     };
 
-    // 点面板外面收起（capture 阶段，先于站点自己的点击处理）
-    document.addEventListener('click', (e) => {
-      const panel = document.querySelector('.sspai-tidy-blocked');
-      if (!panel || panel.hidden) return;
-      if (panel.contains(e.target) || (e.target.closest && e.target.closest('.sspai-tidy-filter-btn'))) return;
-      panel.hidden = true;
-      const btn = document.querySelector('.sspai-tidy-filter-btn');
-      if (btn) btn.setAttribute('aria-expanded', 'false');
-    }, true);
-
     let filterTimer = 0;
-    const kickFilter = () => {
+    const kick = () => {
       clearTimeout(filterTimer);
-      filterTimer = setTimeout(ensureBar, 150);
+      filterTimer = setTimeout(sync, 150);
     };
 
     whenReady(() => {
-      ensureBar();
-      onDomChange(kickFilter);
-      onRoute(ensureBar);
+      sync();
+      onDomChange(kick);
+      onRoute(sync);
+    });
+  }
+
+  /* ---------- 底部「说点什么」条：配色统一 ----------
+     —— 站点把这条固定在正文末尾：外层是一张卡片，里面两层各自还带了背景，
+        隐藏评论区之后整条露出来，就是一条颜色对不上的横带。
+        拿不到站点样式表（post.sspai.com 对无 referer 的请求回 403），所以不猜
+        哪一层带的颜色 —— 直接读卡片自己算出来的底色，合成不透明后写进 CSS 变量，
+        里面两层都跟着这个变量走。浅色主题抄到白、深色主题抄到深，不写死色值。
+        主题是 class 切换的，所以顺带盯一下 <html> 的属性。 */
+  {
+    const parseColor = (str) => {
+      const m = /rgba?\(([^)]+)\)/.exec(str || '');
+      if (!m) return null;
+      const p = m[1].split(',').map((x) => parseFloat(x));
+      if (p.length < 3 || p.some((n) => Number.isNaN(n))) return null;
+      return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+    };
+    const mix = (fg, bg) =>
+      'rgb(' + Math.round(fg.r * fg.a + bg.r * (1 - fg.a)) + ', ' +
+      Math.round(fg.g * fg.a + bg.g * (1 - fg.a)) + ', ' +
+      Math.round(fg.b * fg.a + bg.b * (1 - fg.a)) + ')';
+
+    const unifyBar = () => {
+      const card = document.querySelector('.article__bar__wrapper');
+      if (!card) return;
+      const fg = parseColor(getComputedStyle(card).backgroundColor);
+      if (!fg || fg.a === 0) return;                       // 卡片本身透明，没得抄
+      let solid = getComputedStyle(card).backgroundColor;
+      if (fg.a < 1) {
+        const page = parseColor(getComputedStyle(document.body).backgroundColor) || { r: 255, g: 255, b: 255, a: 1 };
+        solid = mix(fg, page);
+      }
+      if (card.style.getPropertyValue('--sspai-tidy-bar-bg') !== solid) {
+        card.style.setProperty('--sspai-tidy-bar-bg', solid);
+      }
+    };
+
+    whenReady(() => {
+      unifyBar();
+      onDomChange(unifyBar);
+      onRoute(() => setTimeout(unifyBar, 400));   // 路由切换后卡片要晚一点才挂出来
+      // 主题切换是给 <html> 加 class，不会触发 body 的 childList 变化
+      new MutationObserver(unifyBar).observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['class', 'style', 'data-theme'],
+      });
     });
   }
 
