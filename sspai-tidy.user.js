@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         少数派 · 阅读增强
 // @namespace    local.sspai.tidy
-// @version      2.2.0
+// @version      2.2.1
 // @description  保留少数派原有目录、图片查看器、分享与评论入口；清理广告位、推广卡、侧栏和正文后的干扰模块，并提供紧凑列表、阅读进度、代码复制、已读标记、返回位置恢复、列表过滤与导出、图片原图下载
 // @author       hulatu
 // @homepageURL  https://github.com/hulatu/sspai-tidy
@@ -213,12 +213,18 @@ ${(CFG.hideArticleComments || CFG.hideArticleRelated) ? `.article__subsection__w
   padding-bottom: 0 !important;
   min-height: 0 !important;
 }` : ''}
-/* 底部「说点什么」固定条：外层卡片是白的，内层 .article__bar__inner 却单独铺了
-   一层页面底色，两个色号差一点点 —— 没隐藏评论区时它被内容压着不明显，
-   隐藏之后整条露出来，就是一条灰带。用 inherit 让内层跟着外层取色：
-   外层白它就白，深色主题外层深它就深，不用写死任何颜色 */
+/* 底部「说点什么」固定条：外层卡片是白的，里面的 .article__bar__inner
+   自己又铺了一层底色（可能还叠了毛玻璃或内阴影），和卡片的白差一点点 ——
+   没隐藏评论区时被内容压着看不出来，隐藏之后整条露出来就是一条灰带。
+   这里把内层和它的占位层都清干净，只让最外层卡片出颜色；
+   上一条 background: inherit 没生效，说明那层颜色不只是 background，
+   所以这里连阴影和毛玻璃一起关掉 */
+.comp__ArticleStickyBar__wrapper,
 .article__bar__inner {
-  background: inherit !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
 }
 ${CFG.hideInlineComment ? `/* 正文每个章节末尾都插了一条「发表首评 + 表情 + 评论」互动条，
    7 处、每处 24px 高 + 32px 上边距，夹在正文里打断阅读节奏 */
@@ -658,60 +664,92 @@ ${CFG.userWide ? `
 ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加载」就是一个只看新文章的信息流 */
 .sspai-tidy-read { display: none !important; }` : ''}
 
-/* ---------- 列表过滤条 ----------
-   列表页顶部的输入框 + 屏蔽名单。半透明灰底 + backdrop-filter，
-   深浅两个主题都不用写死颜色（站点只公开了文字色变量，没有面板底色） */
-.sspai-tidy-filter {
+/* ---------- 列表工具条 ----------
+   不做通栏横条：通栏会多出一条分隔线把列表切开，还和站点自己的「排序 / 标签」栏
+   抢位置。改成贴在列表右上角的一小排胶囊 —— 默认只占一个搜索胶囊的宽度，
+   聚焦后才展开；没有过滤条件时连计数都不显示。
+   颜色全部走半透明灰，深浅主题自适应，不写死任何色值 */
+.sspai-tidy-tools {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 0;
-  border-bottom: 1px solid rgba(128, 128, 128, .16);
-  font-size: 13px;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 0 10px;
+  font-size: 12px;
+}
+.sspai-tidy-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 132px;
+  padding: 5px 12px;
+  background: rgba(128, 128, 128, .1);
+  border-radius: 999px;
+  transition: width .18s ease, background .18s ease;
+}
+.sspai-tidy-search:focus-within {
+  width: 240px;
+  background: rgba(128, 128, 128, .16);
+}
+.sspai-tidy-search-icon {
+  flex: 0 0 auto;
+  display: block;
+  color: var(--B6-t, #6a6a6a);
 }
 .sspai-tidy-filter-input {
   flex: 1 1 auto;
   min-width: 0;
-  padding: 6px 10px;
+  padding: 0;
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--B8-t, #1a1a1a);
-  background: rgba(128, 128, 128, .09);
-  border: 1px solid rgba(128, 128, 128, .18);
-  border-radius: 6px;
+  background: none;
+  border: none;
   outline: none;
 }
-.sspai-tidy-filter-input:focus {
-  border-color: rgba(128, 128, 128, .45);
+/* 去掉 type=search 自带的那个小叉，和胶囊的圆角对不上 */
+.sspai-tidy-filter-input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
 }
 .sspai-tidy-filter-count {
   flex: 0 0 auto;
   color: var(--B6-t, #6a6a6a);
-  font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+.sspai-tidy-filter-count:empty {
+  display: none;
 }
 .sspai-tidy-filter-btn {
   flex: 0 0 auto;
-  padding: 5px 10px;
+  padding: 5px 12px;
   font: inherit;
   font-size: 12px;
   color: var(--B6-t, #6a6a6a);
   background: rgba(128, 128, 128, .1);
   border: none;
-  border-radius: 6px;
+  border-radius: 999px;
   cursor: pointer;
+  transition: color .15s, background .15s;
 }
-.sspai-tidy-filter-btn:hover {
+.sspai-tidy-filter-btn:hover,
+.sspai-tidy-filter-btn[aria-expanded="true"] {
   color: var(--B8-t, #1a1a1a);
+  background: rgba(128, 128, 128, .18);
+}
+@media (max-width: 640px) {
+  .sspai-tidy-search {
+    flex: 1 1 auto;
+    width: auto;
+  }
 }
 
 .sspai-tidy-blocked {
   position: absolute;
-  top: calc(100% - 2px);
+  top: calc(100% + 2px);
   right: 0;
   z-index: 2147482000;
-  width: 320px;
+  width: 300px;
   max-width: 88vw;
   padding: 12px;
   background: rgba(128, 128, 128, .14);
@@ -1377,11 +1415,18 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
         card.classList.toggle('sspai-tidy-hidden', hide);
         if (!hide) shown++;
       }
+      // 没有过滤条件时不显示「40 / 40」这种废话
       const count = document.querySelector('.sspai-tidy-filter-count');
-      if (count) count.textContent = shown + ' / ' + cards.length;
+      if (count) count.textContent = shown === cards.length ? '' : shown + ' / ' + cards.length;
+    };
+
+    const refreshLabel = () => {
+      const btn = document.querySelector('.sspai-tidy-filter-btn');
+      if (btn) btn.textContent = blocked.length ? '屏蔽 ' + blocked.length : '屏蔽';
     };
 
     const renderBlocked = (list) => {
+      refreshLabel();
       list.textContent = '';
       if (!blocked.length) {
         const li = document.createElement('li');
@@ -1426,7 +1471,7 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
     const ensureBar = () => {
       const host = document.querySelector(HOST_SEL);
       if (!host) return;
-      let bar = document.querySelector('.sspai-tidy-filter');
+      let bar = document.querySelector('.sspai-tidy-tools');
       if (bar && host.contains(bar)) {
         apply();
         return;
@@ -1434,11 +1479,17 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
       if (bar) bar.remove();
 
       bar = document.createElement('div');
-      bar.className = 'sspai-tidy-filter';
+      bar.className = 'sspai-tidy-tools';
       bar.innerHTML =
-        '<input class="sspai-tidy-filter-input" type="search" placeholder="过滤标题 / 作者 / 关键词" aria-label="过滤文章列表">' +
+        '<label class="sspai-tidy-search">' +
+        '<svg class="sspai-tidy-search-icon" width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">' +
+        '<circle cx="7" cy="7" r="4.4" fill="none" stroke="currentColor" stroke-width="1.5"></circle>' +
+        '<path d="M10.4 10.4 L14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>' +
+        '</svg>' +
+        '<input class="sspai-tidy-filter-input" type="search" placeholder="过滤列表" aria-label="过滤文章列表">' +
+        '</label>' +
         '<span class="sspai-tidy-filter-count"></span>' +
-        '<button class="sspai-tidy-filter-btn" type="button" aria-expanded="false">屏蔽名单</button>' +
+        '<button class="sspai-tidy-filter-btn" type="button" aria-expanded="false">屏蔽</button>' +
         '<div class="sspai-tidy-blocked" hidden>' +
         '<div class="sspai-tidy-blocked-row">' +
         '<input class="sspai-tidy-blocked-input" type="text" placeholder="作者名或关键词" aria-label="要屏蔽的词">' +
@@ -1473,6 +1524,7 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
       bAdd.addEventListener('click', () => addBlocked(bInput.value, bInput, list));
 
       renderBlocked(list);
+      refreshLabel();
       apply();
     };
 
