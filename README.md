@@ -32,7 +32,7 @@
 
 少数派的列表页把三分之二的屏幕给了轮播、侧栏和推广卡，文章页在正文之后又堆了近 2000px 的广告、打赏、评论和「关联阅读」。
 
-这个脚本把它们都拿掉，**一屏从 4 篇变成 9 篇，文章页读完正文就结束**；同时保留少数派自己的目录、图片查看器、分享和评论入口，只额外补上阅读进度条、代码块复制、已读标记和返回位置恢复。
+这个脚本把它们都拿掉，**一屏从 4 篇变成 9 篇，文章页读完正文就结束**；同时保留少数派自己的目录、图片查看器、分享和评论入口，只额外补上阅读进度条、代码块复制、已读标记、返回位置恢复，以及列表过滤、导出和图片原图下载。
 
 ## 📊 数字对比
 
@@ -77,7 +77,7 @@
 
 原文中的付费声明、利益相关声明和产品信息不会被误删。脚本只隐藏明确指向广告、会员推广、客户端下载和商城的模块。
 
-## ✨ 保留的四项增强
+## ✨ 增强
 
 ### 📊 阅读进度条
 
@@ -101,10 +101,28 @@
 
 从列表点进文章、再退回来，会停在你刚才读到的那一行。位置按路由记在 `sessionStorage`，关掉标签页就忘；只在列表页（首页 / feed / Matrix / 搜索 / 作者页）生效，超过十分钟的旧位置不再跳转。
 
+### 🔍 列表过滤与屏蔽名单
+
+列表顶部多一条输入框：输入几个词（空格分隔、同时命中）就实时过滤标题、作者和摘要，右侧显示「可见 / 总数」。
+点「屏蔽名单」可以加作者名或关键词，命中的条目直接从列表里消失 —— 名单存在 GM 存储里，换页面、关掉再开都还在。
+两个一起用就是「只看我想看的」：屏蔽掉不想看的作者，再按关键词缩小范围。
+
+### 📤 导出当前列表
+
+Tampermonkey 的脚本菜单里有一条「导出当前列表为 Markdown」：把**当前可见**的条目（过滤和屏蔽之后剩下的）导成 `- [标题](链接) — 作者 · 时间`，直接复制到剪贴板，粘进 Obsidian / 备忘录就能用；复制失败时改为下载 `.md` 文件。
+
+### 🖼 图片下载原图
+
+文章里的每张配图右上角有一个「下载原图」，悬停出现（触摸设备常显）。走 `GM_download`，不受跨域限制，文件名取自图片地址；没有 GM 权限时退回打开新标签。点击不会顺带打开站点的图片查看器。
+
+### ↗ 站外链接标记
+
+正文里指向站外的链接会在末尾补一个很小的 `↗`，一眼看出点下去会离开少数派；顺带补上 `target="_blank"` 和 `rel="noopener noreferrer"`。站内链接不做任何改动。
+
 ## 🚀 装法
 
 1. 装 [Tampermonkey](https://www.tampermonkey.net/)（Chrome / Edge / Firefox 商店都有；Safari 用 [Userscripts](https://apps.apple.com/app/userscripts/id1463298887)）。
-2. 点 **[sspai-tidy.user.js](https://raw.githubusercontent.com/hulatu/sspai-tidy/main/sspai-tidy.user.js)** —— 会弹出安装页，点「安装」。
+2. 点 **[sspai-tidy.user.js](https://raw.githubusercontent.com/hulatu/sspai-tidy/main/sspai-tidy.user.js)** —— 会弹出安装页，**它要五个 GM 权限和一个 `@connect *`**（用途见下面「🔐 权限」），确认后点「安装」。
 3. 打开 <https://sspai.com/> ，生效。
 
 > 脚本头里写了 `@updateURL` / `@downloadURL`，以后我推新版本，Tampermonkey 会自己提示更新，不用手动重装。
@@ -144,7 +162,15 @@ const CFG = {
   codeCopy:      true,   // 代码块右上角「复制」
   markRead:      true,   // 列表里标记读过的文章
   hideRead:      false,  // true = 已读文章直接从列表消失
-  restoreScroll: true    // 从文章返回列表时回到上次的位置
+  restoreScroll: true,   // 从文章返回列表时回到上次的位置
+
+  // ---- 列表工具 ----
+  filterBar:     true,   // 顶部过滤框 + 屏蔽名单
+  exportList:    true,   // 脚本菜单：导出当前列表为 Markdown
+
+  // ---- 文章页 ----
+  imageDownload: true,   // 图片「下载原图」
+  externalMark:  true    // 站外链接的 ↗ 标记
 };
 ```
 
@@ -154,8 +180,24 @@ const CFG = {
 - **想更极端地只看标题**：`thumb: 0`，变成纯文字列表（单条 99 → 92px），没有图更安静
 - **想留评论区**（少数派的评论质量通常不错）：`hideArticleComments: false`
 - **不喜欢被标记**：`markRead: false`（已经记下的条目不会被清掉）；反过来想要「只看没读过的」，把 `hideRead` 改成 `true`。
+- **不想要过滤条**：`filterBar: false`（屏蔽名单会保留在存储里，只是不显示入口）。
+- **不想装 GM 下载**：`imageDownload: false`；导出菜单可以单独用 `exportList: false` 关掉。
 - **只想要阅读进度条**：把上面所有 `hide*` 都改成 `false`，只留 `progressBar: true`
 - **想保留站方推广句**：`hideAppPromos: false`
+
+## 🔐 权限
+
+2.2 起脚本申请了五个 GM 权限和一条 `@connect *`，安装时 Tampermonkey 会逐条列出来：
+
+| 权限 | 用在哪 |
+| --- | --- |
+| `GM_getValue` / `GM_setValue` | 存屏蔽名单（没装 GM 时自动退回 `localStorage`） |
+| `GM_registerMenuCommand` | 脚本菜单里的「导出当前列表为 Markdown」 |
+| `GM_download` | 「下载原图」，绕过图片所在域的跨域限制 |
+| `GM_setClipboard` | 导出时写剪贴板 |
+| `@connect *` | 图片可能来自任意图床，`GM_download` 需要对这些域名放行 |
+
+只想用「减法」那部分（清理广告位、紧凑列表）的话，把 `filterBar` / `exportList` / `imageDownload` 关掉即可，脚本不会再用到这些权限 —— 但脚本头里的声明还在，安装提示不会因此变少。
 
 ## 🚧 注意
 
@@ -167,7 +209,7 @@ const CFG = {
 - Matrix 的规则（`.container`、`.posts-list`、`.post-title`、`.post-cover`）全部通过当前 SPA 路由限定，只在 Matrix 页生效，避免误伤搜索页、标签页和文章页。
 - 图片查看器和目录都完全交给原站。脚本不监听图片点击、不注册 `Esc`、不覆盖目录的展开样式。
 - 常驻轮询已经移除：页面更新用共享 `MutationObserver` 合并到每帧一次，阅读进度用滚动、`ResizeObserver` 和图片 `load` 事件驱动。
-- 脚本只改样式、触发「加载更多」、写一条本地已读记录；**不碰登录态、不读你的数据、不发任何网络请求**。
+- 脚本只改样式、触发「加载更多」、读写本地已读记录和屏蔽名单；**不碰登录态，也不读你的浏览记录**。唯一的外发请求是你点「下载原图」时由 `GM_download` 去取那张图 —— 不经过任何第三方服务器。
 
 ## 🧪 兼容性
 

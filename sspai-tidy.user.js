@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         少数派 · 阅读增强
 // @namespace    local.sspai.tidy
-// @version      2.1.0
-// @description  保留少数派原有目录、图片查看器、分享与评论入口；清理广告位、推广卡、侧栏和正文后的干扰模块，并提供紧凑列表、阅读进度、代码复制、已读标记与返回位置恢复
+// @version      2.2.0
+// @description  保留少数派原有目录、图片查看器、分享与评论入口；清理广告位、推广卡、侧栏和正文后的干扰模块，并提供紧凑列表、阅读进度、代码复制、已读标记、返回位置恢复、列表过滤与导出、图片原图下载
 // @author       hulatu
 // @homepageURL  https://github.com/hulatu/sspai-tidy
 // @supportURL   https://github.com/hulatu/sspai-tidy/issues
@@ -12,7 +12,12 @@
 // @icon         https://sspai.com/favicon.ico
 // @license      MIT
 // @run-at       document-start
-// @grant        none
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_registerMenuCommand
+// @grant        GM_download
+// @grant        GM_setClipboard
+// @connect      *
 // @noframes
 // ==/UserScript==
 
@@ -55,7 +60,15 @@
     codeCopy:      true,   // 代码块右上角「复制」
     markRead:      true,   // 列表里标记读过的文章（记在 localStorage，只存最近 400 篇）
     hideRead:      false,  // true = 已读文章直接从列表里消失（配合自动加载就是「只看没读过的」）
-    restoreScroll: true    // 从文章返回列表时回到上次读到的位置（只记本次标签页）
+    restoreScroll: true,   // 从文章返回列表时回到上次读到的位置（只记本次标签页）
+
+    // ---- 列表工具 ----
+    filterBar:     true,   // 列表顶部过滤框 + 屏蔽名单（名单存在 GM 存储里，下次打开还在）
+    exportList:    true,   // 脚本菜单：把当前列表导出成 Markdown
+
+    // ---- 文章页 ----
+    imageDownload: true,   // 图片右上角「下载原图」（走 GM_download，不经过跨域限制）
+    externalMark:  true    // 站外链接补一个 ↗ 标记，并补上 rel="noopener"
   };
 
   /* 列表宽度：首页 / Matrix / 作者页三处共用，改一处即可 */
@@ -64,6 +77,106 @@
 
   const thumbWidth = Math.max(0, Number(CFG.thumb) || 0);
   const thumbSide = CFG.thumbSide === 'right' ? 'right' : 'left';
+
+  /* ================================================================
+     存储：GM 优先，退回 localStorage
+     —— 2.2 起脚本会申请 GM 权限。Tampermonkey 的 GM_getValue 直接存取对象，
+        别的实现可能存字符串；这里统一兜一层，任何一步抛错都退回 localStorage，
+        不让一个存储问题把整个脚本卡死（隐私模式下 localStorage 也会抛）。
+     ================================================================ */
+  const safeParse = (raw, fallback) => {
+    try {
+      const v = JSON.parse(raw)
+      return v == null ? fallback : v
+    } catch (e) { return fallback }
+  }
+
+  const storeGet = (key, fallback) => {
+    try {
+      if (typeof GM_getValue === 'function') {
+        const v = GM_getValue(key, null)
+        if (v !== null && v !== undefined) {
+          return typeof v === 'string' ? safeParse(v, fallback) : v
+        }
+      }
+    } catch (e) { /* 没有 GM 或权限被拒，走下面的回退 */ }
+    try {
+      const raw = localStorage.getItem(key)
+      return raw ? safeParse(raw, fallback) : fallback
+    } catch (e) { return fallback }
+  }
+
+  const storeSet = (key, value) => {
+    try {
+      if (typeof GM_setValue === 'function') {
+        GM_setValue(key, value)
+        return
+      }
+    } catch (e) { /* 同上 */ }
+    try { localStorage.setItem(key, JSON.stringify(value)) } catch (e) {}
+  };
+
+  /* ================================================================
+     几个到处要用的小组件
+     ================================================================ */
+
+  /** 复制纯文本；GM 通道和 execCommand 都在，先试哪个都不吃亏 */
+  const fallbackCopy = (text) => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
+    (document.body || document.documentElement).appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) {}
+    ta.remove();
+    return ok;
+  };
+
+  const copyOut = (text) => {
+    try {
+      if (typeof GM_setClipboard === 'function') {
+        GM_setClipboard(text, 'text');
+        return true;
+      }
+    } catch (e) { /* 权限被拒就退回 execCommand */ }
+    return fallbackCopy(text);
+  };
+
+  /** 底部轻提示：同一时刻只留一条 */
+  const toast = (message) => {
+    let el = document.getElementById('sspai-tidy-toast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'sspai-tidy-toast';
+      (document.body || document.documentElement).appendChild(el);
+    }
+    el.textContent = message;
+    el.classList.add('show');
+    clearTimeout(el.__sspaiTidyTimer);
+    el.__sspaiTidyTimer = setTimeout(() => el.classList.remove('show'), 2200);
+  };
+
+  const downloadText = (fileName, text) => {
+    const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fileName;
+    a.rel = 'noopener';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+
+  /** 图片地址 → 文件名 */
+  const fileNameOf = (url) => {
+    try {
+      const last = new URL(url, location.href).pathname.split('/').filter(Boolean).pop() || 'image';
+      return /\.(jpe?g|png|gif|webp|avif|svg|bmp)$/i.test(last) ? last : last + '.jpg';
+    } catch (e) {
+      return 'image.jpg';
+    }
+  };
 
   /* ================================================================
      样式
@@ -100,6 +213,13 @@ ${(CFG.hideArticleComments || CFG.hideArticleRelated) ? `.article__subsection__w
   padding-bottom: 0 !important;
   min-height: 0 !important;
 }` : ''}
+/* 底部「说点什么」固定条：外层卡片是白的，内层 .article__bar__inner 却单独铺了
+   一层页面底色，两个色号差一点点 —— 没隐藏评论区时它被内容压着不明显，
+   隐藏之后整条露出来，就是一条灰带。用 inherit 让内层跟着外层取色：
+   外层白它就白，深色主题外层深它就深，不用写死任何颜色 */
+.article__bar__inner {
+  background: inherit !important;
+}
 ${CFG.hideInlineComment ? `/* 正文每个章节末尾都插了一条「发表首评 + 表情 + 评论」互动条，
    7 处、每处 24px 高 + 32px 上边距，夹在正文里打断阅读节奏 */
 .comment__footer__wrapper { display: none !important; }` : ''}
@@ -537,6 +657,208 @@ ${CFG.userWide ? `
 }
 ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加载」就是一个只看新文章的信息流 */
 .sspai-tidy-read { display: none !important; }` : ''}
+
+/* ---------- 列表过滤条 ----------
+   列表页顶部的输入框 + 屏蔽名单。半透明灰底 + backdrop-filter，
+   深浅两个主题都不用写死颜色（站点只公开了文字色变量，没有面板底色） */
+.sspai-tidy-filter {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(128, 128, 128, .16);
+  font-size: 13px;
+}
+.sspai-tidy-filter-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--B8-t, #1a1a1a);
+  background: rgba(128, 128, 128, .09);
+  border: 1px solid rgba(128, 128, 128, .18);
+  border-radius: 6px;
+  outline: none;
+}
+.sspai-tidy-filter-input:focus {
+  border-color: rgba(128, 128, 128, .45);
+}
+.sspai-tidy-filter-count {
+  flex: 0 0 auto;
+  color: var(--B6-t, #6a6a6a);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.sspai-tidy-filter-btn {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--B6-t, #6a6a6a);
+  background: rgba(128, 128, 128, .1);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.sspai-tidy-filter-btn:hover {
+  color: var(--B8-t, #1a1a1a);
+}
+
+.sspai-tidy-blocked {
+  position: absolute;
+  top: calc(100% - 2px);
+  right: 0;
+  z-index: 2147482000;
+  width: 320px;
+  max-width: 88vw;
+  padding: 12px;
+  background: rgba(128, 128, 128, .14);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  backdrop-filter: blur(18px) saturate(1.5);
+  border: 1px solid rgba(128, 128, 128, .22);
+  border-radius: 10px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .18);
+}
+.sspai-tidy-blocked[hidden] {
+  display: none;
+}
+.sspai-tidy-blocked-row {
+  display: flex;
+  gap: 8px;
+}
+.sspai-tidy-blocked-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--B8-t, #1a1a1a);
+  background: rgba(128, 128, 128, .12);
+  border: 1px solid rgba(128, 128, 128, .2);
+  border-radius: 6px;
+  outline: none;
+}
+.sspai-tidy-blocked-add {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--B8-t, #1a1a1a);
+  background: rgba(128, 128, 128, .2);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.sspai-tidy-blocked-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.sspai-tidy-blocked-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  color: var(--B6-t, #6a6a6a);
+  font-size: 12px;
+}
+.sspai-tidy-blocked-list li > span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sspai-tidy-blocked-list li > button {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--B6-t, #6a6a6a);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.sspai-tidy-blocked-empty {
+  padding: 6px 0;
+  color: var(--B6-t, #6a6a6a);
+  font-size: 12px;
+}
+
+/* 被过滤掉的条目：用 class 而不是内联 style，方便一键撤销 */
+.sspai-tidy-hidden {
+  display: none !important;
+}
+
+/* ---------- 图片下载原图 ---------- */
+.article__main__content figure.image {
+  position: relative;
+}
+.sspai-tidy-dl {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  padding: 3px 9px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--B8-t, #1a1a1a);
+  background: rgba(128, 128, 128, .2);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .15s;
+}
+.article__main__content figure.image:hover .sspai-tidy-dl,
+.sspai-tidy-dl:focus-visible {
+  opacity: 1;
+}
+@media (hover: none) {
+  .sspai-tidy-dl { opacity: 1; }
+}
+
+/* ---------- 站外链接标记 ---------- */
+.article__main__content a.sspai-tidy-ext::after {
+  content: '↗';
+  margin-left: 2px;
+  font-size: .85em;
+  opacity: .6;
+}
+
+/* ---------- 轻提示 ---------- */
+#sspai-tidy-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 32px;
+  z-index: 2147483001;
+  max-width: 80vw;
+  padding: 8px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--B8-t, #1a1a1a);
+  background: rgba(128, 128, 128, .18);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5);
+  backdrop-filter: blur(16px) saturate(1.5);
+  border-radius: 8px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 8px);
+  transition: opacity .2s, transform .2s;
+}
+#sspai-tidy-toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+@media (prefers-reduced-motion: reduce) {
+  #sspai-tidy-toast,
+  .sspai-tidy-dl { transition: none; }
+}
 `;
 
   /* ================================================================
@@ -955,19 +1277,6 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
 
   /* ---------- 代码块复制 ---------- */
   if (CFG.codeCopy) {
-    const fallbackCopy = (text) => {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.setAttribute('readonly', '');
-      ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
-      document.body.appendChild(ta);
-      ta.select();
-      let ok = false;
-      try { ok = document.execCommand('copy'); } catch (e) {}
-      ta.remove();
-      return ok;
-    };
-
     const showResult = (btn, ok) => {
       btn.textContent = ok ? '已复制' : '复制失败';
       setTimeout(() => {
@@ -1033,6 +1342,270 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
       attachCopy();
       onDomChange(attachCopy);
       onRoute(attachCopy);
+    });
+  }
+
+  /* ================================================================
+     列表过滤：关键词 + 屏蔽名单
+     —— 名单里每一条就是一段普通子串，同时比对标题、作者和摘要。
+        作者名本来就出现在卡片文字里，所以「屏蔽某个作者」和「屏蔽某个关键词」
+        是同一套机制，不用为作者单独开数据结构。
+        名单存在 GM 存储里（没有 GM 就退回 localStorage），下次打开还在。
+     ================================================================ */
+  if (CFG.filterBar) {
+    const BLOCK_KEY = 'sspai-tidy:blocked';
+    const CARD_SEL = '.article__card, .posts-list-item, .user__update__item__wrapper';
+    const HOST_SEL = '.feed__main, .posts-list, .user__updates__view';
+
+    let blocked = storeGet(BLOCK_KEY, []);
+    if (!Array.isArray(blocked)) blocked = [];
+    let query = '';
+
+    const allCards = () => [...document.querySelectorAll(CARD_SEL)];
+
+    const apply = () => {
+      const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+      const banned = blocked.map((t) => String(t).toLowerCase()).filter(Boolean);
+      const cards = allCards();
+      let shown = 0;
+      for (const card of cards) {
+        const text = (card.textContent || '').toLowerCase();
+        // 多个词是「与」关系：都命中才留下
+        const missQuery = terms.length > 0 && !terms.every((t) => text.includes(t));
+        const hitBlocked = banned.some((t) => text.includes(t));
+        const hide = missQuery || hitBlocked;
+        card.classList.toggle('sspai-tidy-hidden', hide);
+        if (!hide) shown++;
+      }
+      const count = document.querySelector('.sspai-tidy-filter-count');
+      if (count) count.textContent = shown + ' / ' + cards.length;
+    };
+
+    const renderBlocked = (list) => {
+      list.textContent = '';
+      if (!blocked.length) {
+        const li = document.createElement('li');
+        li.className = 'sspai-tidy-blocked-empty';
+        li.textContent = '还没有屏蔽任何词';
+        list.appendChild(li);
+        return;
+      }
+      for (const term of blocked) {
+        const li = document.createElement('li');
+        const span = document.createElement('span');
+        span.textContent = term;
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.textContent = '×';
+        del.setAttribute('aria-label', '移除屏蔽词 ' + term);
+        del.addEventListener('click', () => {
+          blocked = blocked.filter((t) => t !== term);
+          storeSet(BLOCK_KEY, blocked);
+          renderBlocked(list);
+          apply();
+        });
+        li.append(span, del);
+        list.appendChild(li);
+      }
+    };
+
+    const addBlocked = (value, input, list) => {
+      const term = String(value || '').trim();
+      if (!term) return;
+      if (!blocked.some((t) => t.toLowerCase() === term.toLowerCase())) {
+        blocked = blocked.concat(term);
+        storeSet(BLOCK_KEY, blocked);
+        renderBlocked(list);
+        apply();
+      }
+      input.value = '';
+      input.focus();
+    };
+
+    /** 名单只建一次；站点重渲染把整块删掉了才重建 */
+    const ensureBar = () => {
+      const host = document.querySelector(HOST_SEL);
+      if (!host) return;
+      let bar = document.querySelector('.sspai-tidy-filter');
+      if (bar && host.contains(bar)) {
+        apply();
+        return;
+      }
+      if (bar) bar.remove();
+
+      bar = document.createElement('div');
+      bar.className = 'sspai-tidy-filter';
+      bar.innerHTML =
+        '<input class="sspai-tidy-filter-input" type="search" placeholder="过滤标题 / 作者 / 关键词" aria-label="过滤文章列表">' +
+        '<span class="sspai-tidy-filter-count"></span>' +
+        '<button class="sspai-tidy-filter-btn" type="button" aria-expanded="false">屏蔽名单</button>' +
+        '<div class="sspai-tidy-blocked" hidden>' +
+        '<div class="sspai-tidy-blocked-row">' +
+        '<input class="sspai-tidy-blocked-input" type="text" placeholder="作者名或关键词" aria-label="要屏蔽的词">' +
+        '<button class="sspai-tidy-blocked-add" type="button">添加</button>' +
+        '</div><ul class="sspai-tidy-blocked-list"></ul></div>';
+      host.insertBefore(bar, host.firstChild);
+
+      const input = bar.querySelector('.sspai-tidy-filter-input');
+      const panel = bar.querySelector('.sspai-tidy-blocked');
+      const list = bar.querySelector('.sspai-tidy-blocked-list');
+      const toggle = bar.querySelector('.sspai-tidy-filter-btn');
+      const bInput = bar.querySelector('.sspai-tidy-blocked-input');
+      const bAdd = bar.querySelector('.sspai-tidy-blocked-add');
+
+      // 站点有自己的键盘快捷键，输入框里敲字不该触发它们
+      for (const el of [input, bInput]) {
+        el.addEventListener('keydown', (e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter' && el === bInput) addBlocked(bInput.value, bInput, list);
+          if (e.key === 'Escape') { el.blur(); panel.hidden = true; toggle.setAttribute('aria-expanded', 'false'); }
+        });
+      }
+
+      input.addEventListener('input', () => { query = input.value; apply(); });
+      if (query) input.value = query;
+
+      toggle.addEventListener('click', () => {
+        panel.hidden = !panel.hidden;
+        toggle.setAttribute('aria-expanded', String(!panel.hidden));
+        if (!panel.hidden) bInput.focus();
+      });
+      bAdd.addEventListener('click', () => addBlocked(bInput.value, bInput, list));
+
+      renderBlocked(list);
+      apply();
+    };
+
+    // 点面板外面收起（capture 阶段，先于站点自己的点击处理）
+    document.addEventListener('click', (e) => {
+      const panel = document.querySelector('.sspai-tidy-blocked');
+      if (!panel || panel.hidden) return;
+      if (panel.contains(e.target) || (e.target.closest && e.target.closest('.sspai-tidy-filter-btn'))) return;
+      panel.hidden = true;
+      const btn = document.querySelector('.sspai-tidy-filter-btn');
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+    }, true);
+
+    let filterTimer = 0;
+    const kickFilter = () => {
+      clearTimeout(filterTimer);
+      filterTimer = setTimeout(ensureBar, 150);
+    };
+
+    whenReady(() => {
+      ensureBar();
+      onDomChange(kickFilter);
+      onRoute(ensureBar);
+    });
+  }
+
+  /* ---------- 导出当前列表 ----------
+     —— 只导出「当前可见」的条目：过滤和屏蔽之后剩什么就导什么。
+        复制到剪贴板（GM_setClipboard，退到 execCommand），失败再下载文件。 */
+  if (CFG.exportList && typeof GM_registerMenuCommand === 'function') {
+    const stamp = () => {
+      const d = new Date();
+      const p = (n) => String(n).padStart(2, '0');
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+    };
+
+    GM_registerMenuCommand('导出当前列表为 Markdown', () => {
+      const cards = [...document.querySelectorAll('.article__card, .posts-list-item, .user__update__item__wrapper')]
+        .filter((c) => !c.classList.contains('sspai-tidy-hidden'));
+      if (!cards.length) {
+        toast('当前列表里没有可导出的条目');
+        return;
+      }
+      const lines = cards.map((card) => {
+        const a = card.querySelector('a[href*="/post/"]');
+        let url = '';
+        try { url = a ? new URL(a.getAttribute('href'), location.origin).href : ''; } catch (e) {}
+        const titleEl = card.querySelector('.article__card__title, .post-title, .user__content__card__title');
+        const title = ((titleEl ? titleEl.textContent : (a ? a.textContent : '')) || '').replace(/\s+/g, ' ').trim();
+        const metaEl = card.querySelector('.article__card__meta, .post-item-bottom, .user__update__item__type');
+        const meta = ((metaEl ? metaEl.textContent : '') || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+        return '- [' + (title || url) + '](' + url + ')' + (meta ? ' — ' + meta : '');
+      });
+      const text = '# 少数派列表导出 · ' + stamp() + '\n\n' + lines.join('\n') + '\n';
+      if (copyOut(text)) {
+        toast('已复制 ' + lines.length + ' 条到剪贴板');
+        return;
+      }
+      downloadText('sspai-list-' + stamp().replace(/[: ]/g, '-') + '.md', text);
+      toast('复制失败，已改为下载文件');
+    });
+  }
+
+  /* ---------- 图片：下载原图 ----------
+     —— 原图往往在另一个域上，直接 <a download> 会被跨域限制拦住；
+        GM_download 不受这个限制，所以优先用它，没有 GM 才退回打开新标签。 */
+  if (CFG.imageDownload) {
+    const downloadImage = (url, name) => {
+      if (typeof GM_download === 'function') {
+        try {
+          GM_download({ url, name, saveAs: false });
+          toast('已开始下载');
+          return;
+        } catch (e) { /* 老版本 GM_download 走下面的两参数形式 */ }
+        try {
+          GM_download(url, name);
+          toast('已开始下载');
+          return;
+        } catch (e) { /* 都失败就打开新标签 */ }
+      }
+      window.open(url, '_blank', 'noopener');
+    };
+
+    const attachDownloads = () => {
+      for (const fig of document.querySelectorAll('.article__main__content figure.image')) {
+        if (fig.querySelector('.sspai-tidy-dl')) continue;
+        const img = fig.querySelector('img');
+        if (!img) continue;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'sspai-tidy-dl';
+        btn.textContent = '下载原图';
+        btn.setAttribute('aria-label', '下载原图');
+        btn.addEventListener('click', (e) => {
+          // 不能让点击冒泡到 figure：那会顺带打开站点的图片查看器
+          e.preventDefault();
+          e.stopPropagation();
+          const url = img.currentSrc || img.src;
+          if (!url) return;
+          downloadImage(url, fileNameOf(url));
+        });
+        fig.appendChild(btn);
+      }
+    };
+
+    whenReady(() => {
+      attachDownloads();
+      onDomChange(attachDownloads);
+      onRoute(attachDownloads);
+    });
+  }
+
+  /* ---------- 站外链接标记 ----------
+     —— 站点本来就新标签打开，这里只补两件它没做的事：
+        给外链加 ≫ 标记（一眼看出会离开少数派），以及补 rel=noopener 防反向控制。 */
+  if (CFG.externalMark) {
+    const markExternal = () => {
+      for (const a of document.querySelectorAll('.article__main__content a[href]')) {
+        if (a.dataset.sspaiTidyExt) continue;
+        let host = '';
+        try { host = new URL(a.href, location.href).hostname; } catch (e) { continue; }
+        if (!host || host === location.hostname || host === 'sspai.com' || host.endsWith('.sspai.com')) continue;
+        a.dataset.sspaiTidyExt = '1';
+        a.classList.add('sspai-tidy-ext');
+        if (!a.getAttribute('target')) a.setAttribute('target', '_blank');
+        a.setAttribute('rel', 'noopener noreferrer');
+      }
+    };
+
+    whenReady(() => {
+      markExternal();
+      onDomChange(markExternal);
+      onRoute(markExternal);
     });
   }
 })();
