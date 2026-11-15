@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         少数派 · 阅读增强
 // @namespace    local.sspai.tidy
-// @version      2.2.1
+// @version      2.2.2
 // @description  保留少数派原有目录、图片查看器、分享与评论入口；清理广告位、推广卡、侧栏和正文后的干扰模块，并提供紧凑列表、阅读进度、代码复制、已读标记、返回位置恢复、列表过滤与导出、图片原图下载
 // @author       hulatu
 // @homepageURL  https://github.com/hulatu/sspai-tidy
@@ -200,33 +200,24 @@ ${CFG.hideCustomerService ? `/* 右下角悬浮工具条（fixed, right:32px bot
    —— 文章标签之后原本还堆着四块东西，合计约 1950px：
         充电卡 222 + 广告位 398 + 讨论区 237 + 关联阅读 864
    ⚠️ 「讨论区」和「关联阅读」外层都套着 .article__subsection__wrapper，
-      不能连 wrapper 一起 display:none —— 底部那条「说点什么…」固定栏的
-      占位元素就挂在里面，整个藏掉会让那条栏塌成 0×0（实测过）。
-      所以只藏里面的内容块，再把 wrapper 自带的内边距清掉。
+      而底部那条「说点什么…」固定栏（comp__ArticleStickyBar）就嵌在这个容器里，
+      所以不能 display:none —— 整块藏掉会把那条栏一起带走（实测过）。
+      做法：内容块各自藏掉，容器本身压成零高度、无背景、无描边 ——
+      看起来这段就不存在了，但里面的固定栏还活着。
+   （底部栏自己的配色不做任何覆盖，保持站点原样。）
    ================================================================ */
 ${CFG.hideArticleCharge ? '.article__charge__card { display: none !important; }' : ''}
 ${CFG.hideArticleAd ? '.advertisement__box { display: none !important; }' : ''}
 ${CFG.hideArticleComments ? '.post__comments { display: none !important; }' : ''}
 ${CFG.hideArticleRelated ? '.related__read__wrapper { display: none !important; }' : ''}
 ${(CFG.hideArticleComments || CFG.hideArticleRelated) ? `.article__subsection__wrapper {
-  padding-top: 0 !important;
-  padding-bottom: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
   min-height: 0 !important;
-}` : ''}
-/* 底部「说点什么」固定条：外层卡片是白的，里面的 .article__bar__inner
-   自己又铺了一层底色（可能还叠了毛玻璃或内阴影），和卡片的白差一点点 ——
-   没隐藏评论区时被内容压着看不出来，隐藏之后整条露出来就是一条灰带。
-   这里把内层和它的占位层都清干净，只让最外层卡片出颜色；
-   上一条 background: inherit 没生效，说明那层颜色不只是 background，
-   所以这里连阴影和毛玻璃一起关掉 */
-.comp__ArticleStickyBar__wrapper,
-.article__bar__inner {
-  background-color: var(--sspai-tidy-bar-bg, transparent) !important;
-  background-image: none !important;
+  background: none !important;
+  border: none !important;
   box-shadow: none !important;
-  -webkit-backdrop-filter: none !important;
-  backdrop-filter: none !important;
-}
+}` : ''}
 ${CFG.hideInlineComment ? `/* 正文每个章节末尾都插了一条「发表首评 + 表情 + 评论」互动条，
    7 处、每处 24px 高 + 32px 上边距，夹在正文里打断阅读节奏 */
 .comment__footer__wrapper { display: none !important; }` : ''}
@@ -1606,53 +1597,6 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
       sync();
       onDomChange(kick);
       onRoute(sync);
-    });
-  }
-
-  /* ---------- 底部「说点什么」条：配色统一 ----------
-     —— 站点把这条固定在正文末尾：外层是一张卡片，里面两层各自还带了背景，
-        隐藏评论区之后整条露出来，就是一条颜色对不上的横带。
-        拿不到站点样式表（post.sspai.com 对无 referer 的请求回 403），所以不猜
-        哪一层带的颜色 —— 直接读卡片自己算出来的底色，合成不透明后写进 CSS 变量，
-        里面两层都跟着这个变量走。浅色主题抄到白、深色主题抄到深，不写死色值。
-        主题是 class 切换的，所以顺带盯一下 <html> 的属性。 */
-  {
-    const parseColor = (str) => {
-      const m = /rgba?\(([^)]+)\)/.exec(str || '');
-      if (!m) return null;
-      const p = m[1].split(',').map((x) => parseFloat(x));
-      if (p.length < 3 || p.some((n) => Number.isNaN(n))) return null;
-      return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
-    };
-    const mix = (fg, bg) =>
-      'rgb(' + Math.round(fg.r * fg.a + bg.r * (1 - fg.a)) + ', ' +
-      Math.round(fg.g * fg.a + bg.g * (1 - fg.a)) + ', ' +
-      Math.round(fg.b * fg.a + bg.b * (1 - fg.a)) + ')';
-
-    const unifyBar = () => {
-      const card = document.querySelector('.article__bar__wrapper');
-      if (!card) return;
-      const fg = parseColor(getComputedStyle(card).backgroundColor);
-      if (!fg || fg.a === 0) return;                       // 卡片本身透明，没得抄
-      let solid = getComputedStyle(card).backgroundColor;
-      if (fg.a < 1) {
-        const page = parseColor(getComputedStyle(document.body).backgroundColor) || { r: 255, g: 255, b: 255, a: 1 };
-        solid = mix(fg, page);
-      }
-      if (card.style.getPropertyValue('--sspai-tidy-bar-bg') !== solid) {
-        card.style.setProperty('--sspai-tidy-bar-bg', solid);
-      }
-    };
-
-    whenReady(() => {
-      unifyBar();
-      onDomChange(unifyBar);
-      onRoute(() => setTimeout(unifyBar, 400));   // 路由切换后卡片要晚一点才挂出来
-      // 主题切换是给 <html> 加 class，不会触发 body 的 childList 变化
-      new MutationObserver(unifyBar).observe(document.documentElement, {
-        attributes: true,
-        attributeFilter: ['class', 'style', 'data-theme'],
-      });
     });
   }
 
