@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         少数派 · 阅读增强
 // @namespace    local.sspai.tidy
-// @version      2.2.2
+// @version      2.3.0
 // @description  保留少数派原有目录、图片查看器、分享与评论入口；清理广告位、推广卡、侧栏和正文后的干扰模块，并提供紧凑列表、阅读进度、代码复制、已读标记、返回位置恢复、列表过滤与导出、图片原图下载
 // @author       hulatu
 // @homepageURL  https://github.com/hulatu/sspai-tidy
@@ -144,18 +144,40 @@
     return fallbackCopy(text);
   };
 
-  /** 底部轻提示：同一时刻只留一条 */
+  /** 底部轻提示：同一时刻只留一条
+   *  v2.3：role="status"，读屏也能听到；先清空、下一帧再写字，同一句话连着出现两次也会再念 */
   const toast = (message) => {
     let el = document.getElementById('sspai-tidy-toast');
     if (!el) {
       el = document.createElement('div');
       el.id = 'sspai-tidy-toast';
+      el.setAttribute('role', 'status');
+      el.setAttribute('aria-live', 'polite');
       (document.body || document.documentElement).appendChild(el);
     }
-    el.textContent = message;
+    el.textContent = '';
+    requestAnimationFrame(() => { el.textContent = message; });
     el.classList.add('show');
     clearTimeout(el.__sspaiTidyTimer);
     el.__sspaiTidyTimer = setTimeout(() => el.classList.remove('show'), 2200);
+  };
+
+  /** v2.3：只给读屏听的播报（复制结果、过滤后剩几篇）。看得见的反馈已经在按钮 / 计数上了，
+   *  不再额外弹 toast。播报区在页面就绪时先建好 —— 先有空区域、再变内容，读屏才稳定播报 */
+  let srEl = null;
+  const ensureSr = () => {
+    if (srEl && srEl.isConnected) return srEl;
+    srEl = document.createElement('div');
+    srEl.className = 'sspai-tidy-sr';
+    srEl.setAttribute('role', 'status');
+    srEl.setAttribute('aria-live', 'polite');
+    (document.body || document.documentElement).appendChild(srEl);
+    return srEl;
+  };
+  const announce = (message) => {
+    const el = ensureSr();
+    el.textContent = '';
+    requestAnimationFrame(() => { el.textContent = message; });
   };
 
   const downloadText = (fileName, text) => {
@@ -624,33 +646,29 @@ ${CFG.userWide ? `
 /* ---------- 已读标记 ----------
    以前是整卡 opacity: .48。按浅色主题的正文色算，标题会落到 2.7–3.2:1，
    低于 AA 的 4.5:1 —— 想「扫一眼看清但不再吸引我」的需求没达成，反而先看不清了。
-   现在改成：标题降到次要灰（约 5.4:1，仍过 AA），元信息、摘要和缩略图压到 55%。
-   视觉上照样一眼分出读没读过，扫读和读屏都不吃亏。 */
+   现在改成：标题降到次要灰（约 5.4:1，仍过 AA），只有缩略图压到 55%。
+   v2.3：作者、时间、摘要**不再压**。它们本来就是次要灰（#6a6a6a，5.4:1），
+   再乘 55% 就成了 #adadad，只剩 2.2:1；标题变灰 + 缩略图变淡已经足够一眼分出读没读过。
+   悬停和键盘聚焦（:focus-within）都恢复原样 —— 以前只认鼠标悬停。 */
 .sspai-tidy-read .article__card__title,
 .sspai-tidy-read .post-title,
 .sspai-tidy-read .user__content__card__title {
   color: var(--B6-t, #6a6a6a) !important;
 }
-.sspai-tidy-read .article__card__meta,
-.sspai-tidy-read .article__card__summary,
 .sspai-tidy-read .article__card__cover,
 .sspai-tidy-read .post-cover,
-.sspai-tidy-read .user__content__card__right,
-.sspai-tidy-read .user__update__item__type {
+.sspai-tidy-read .user__content__card__right {
   opacity: .55;
   transition: opacity .15s;
 }
-.sspai-tidy-read:hover .article__card__title,
-.sspai-tidy-read:hover .post-title,
-.sspai-tidy-read:hover .user__content__card__title {
+.sspai-tidy-read:is(:hover, :focus-within) .article__card__title,
+.sspai-tidy-read:is(:hover, :focus-within) .post-title,
+.sspai-tidy-read:is(:hover, :focus-within) .user__content__card__title {
   color: var(--B8-t, #1a1a1a) !important;
 }
-.sspai-tidy-read:hover .article__card__meta,
-.sspai-tidy-read:hover .article__card__summary,
-.sspai-tidy-read:hover .article__card__cover,
-.sspai-tidy-read:hover .post-cover,
-.sspai-tidy-read:hover .user__content__card__right,
-.sspai-tidy-read:hover .user__update__item__type {
+.sspai-tidy-read:is(:hover, :focus-within) .article__card__cover,
+.sspai-tidy-read:is(:hover, :focus-within) .post-cover,
+.sspai-tidy-read:is(:hover, :focus-within) .user__content__card__right {
   opacity: 1;
 }
 ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加载」就是一个只看新文章的信息流 */
@@ -663,8 +681,8 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
    位置放在站点「返回顶部」按钮上方（站点那条在 right:32 / bottom:32）。 */
 .sspai-tidy-fab-wrap {
   position: fixed;
-  right: 24px;
-  bottom: 92px;
+  right: calc(24px + env(safe-area-inset-right, 0px));
+  bottom: calc(92px + env(safe-area-inset-bottom, 0px));
   z-index: 2147482000;
   display: none;
   font-size: 12px;
@@ -755,6 +773,7 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
 }
 .sspai-tidy-filter-btn {
   flex: 0 0 auto;
+  min-height: 24px;
   padding: 4px 10px;
   font: inherit;
   font-size: 12px;
@@ -830,7 +849,13 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
 }
 .sspai-tidy-blocked-list li > button {
   flex: 0 0 auto;
-  padding: 0 4px;
+  /* v2.3：原来 padding 0 4px、约 16×15px，低于 24px 的最小点击尺寸 */
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border-radius: 4px;
   font-size: 15px;
   line-height: 1;
   color: var(--B6-t, #6a6a6a);
@@ -881,16 +906,38 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
 /* ---------- 站外链接标记 ---------- */
 .article__main__content a.sspai-tidy-ext::after {
   content: '↗';
+  /* v2.3：给读屏的替代文字。不支持「/ 替代文字」写法的浏览器会丢掉这一行，退回上一行的 ↗ */
+  content: '↗' / '（站外链接）';
   margin-left: 2px;
   font-size: .85em;
   opacity: .6;
+}
+
+/* v2.3：新窗口打开的站外链接再多说一句 */
+.article__main__content a.sspai-tidy-ext[target="_blank"]::after {
+  content: '↗';
+  content: '↗' / '（站外链接，新窗口打开）';
+}
+
+/* v2.3：只给读屏的播报区（announce），视觉上不占位 */
+.sspai-tidy-sr {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
 }
 
 /* ---------- 轻提示 ---------- */
 #sspai-tidy-toast {
   position: fixed;
   left: 50%;
-  bottom: 32px;
+  bottom: calc(32px + env(safe-area-inset-bottom, 0px));
   z-index: 2147483001;
   max-width: 80vw;
   padding: 8px 14px;
@@ -951,6 +998,8 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
     el.textContent = CSS;
     parent.appendChild(el);
   }
+
+  whenReady(ensureSr);
 
   whenRoot(() => {
     injectStyle();
@@ -1327,16 +1376,41 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
       tick();
     };
 
-    onRoute(() => setTimeout(restore, 80));
+    /* v2.3：只在「后退 / 前进 / 刷新 / 从 bfcache 回来」时恢复。
+       以前是每次路由都恢复 —— 在首页滚到一半、去 Matrix、再点 logo 回首页，
+       会被拽回那一半；从导航重新进入列表，应该从顶部开始。 */
+    let fromHistory = (() => {
+      try {
+        const nav = performance.getEntriesByType('navigation')[0];
+        return !!nav && (nav.type === 'back_forward' || nav.type === 'reload');
+      } catch (e) { return false; }
+    })();
+    addEventListener('popstate', () => { fromHistory = true; });
+    addEventListener('pageshow', (e) => { if (e.persisted) fromHistory = true; });
+
+    // 路由通知比上面的 popstate 标记先触发，所以判断放进延时里（80ms 本来就要等列表渲染）
+    onRoute(() => setTimeout(() => {
+      const ok = fromHistory;
+      fromHistory = false;
+      if (ok) restore();
+    }, 80));
   }
 
   /* ---------- 代码块复制 ---------- */
   if (CFG.codeCopy) {
+    /* v2.3：
+       · 不再 btn.disabled = true —— 禁用一个正获得焦点的按钮，焦点会掉到 <body>，
+         键盘用户按完回车就找不到自己在哪了。改用 data-busy 防连点。
+       · aria-label 跟着结果变，并播报一次：原来 aria-label 固定是「复制代码」，
+         会盖住按钮上的「已复制」，读屏用户永远不知道成功没有。 */
     const showResult = (btn, ok) => {
       btn.textContent = ok ? '已复制' : '复制失败';
+      btn.setAttribute('aria-label', ok ? '已复制代码' : '复制失败');
+      announce(ok ? '已复制代码' : '复制失败');
       setTimeout(() => {
         btn.textContent = '复制';
-        btn.disabled = false;
+        btn.setAttribute('aria-label', '复制代码');
+        delete btn.dataset.busy;
       }, 1400);
     };
 
@@ -1374,12 +1448,13 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
         btn.title = '复制代码';
         btn.setAttribute('aria-label', '复制代码');
         btn.addEventListener('click', () => {
+          if (btn.dataset.busy) return;
           // 复制前先把按钮自己摘掉，否则会把「复制」两个字一起复制进去
           const clone = pre.cloneNode(true);
           const self = clone.querySelector('.sspai-tidy-copy');
           if (self) self.remove();
           const code = clone.querySelector('code') || clone;
-          btn.disabled = true;
+          btn.dataset.busy = '1';
           copyText((code.textContent || '').replace(/\s+$/, ''), btn);
         });
 
@@ -1445,6 +1520,9 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
       const active = !!query || blocked.length > 0;
       ui.toggle.textContent = blocked.length ? '屏蔽 ' + blocked.length : '屏蔽';
       ui.fab.textContent = active ? '过滤中' : '过滤';
+      // v2.3：原来 aria-label 固定是「过滤文章列表」，盖住了「过滤中」，读屏听不出过滤已生效。
+      // 名字以按钮上看得见的字开头（WCAG 2.5.3）
+      ui.fab.setAttribute('aria-label', active ? '过滤中：过滤文章列表' : '过滤文章列表');
       ui.fab.classList.toggle('has-filter', active);
     };
 
@@ -1468,10 +1546,17 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
         del.textContent = '×';
         del.setAttribute('aria-label', '移除屏蔽词 ' + term);
         del.addEventListener('click', () => {
+          const idx = blocked.indexOf(term);
           blocked = blocked.filter((t) => t !== term);
           storeSet(BLOCK_KEY, blocked);
           renderBlocked();
           apply();
+          // v2.3：被点的 × 随列表重画消失了，焦点原来会掉到 <body>。
+          // 现在落到同一位置的下一个 ×（没有就上一个，名单空了就回输入框）
+          const dels = ui.list.querySelectorAll('li > button');
+          const next = dels[Math.min(idx, dels.length - 1)];
+          (next || ui.bInput).focus();
+          announce('已移除屏蔽词 ' + term);
         });
         li.append(span, del);
         ui.list.appendChild(li);
@@ -1486,15 +1571,18 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
         storeSet(BLOCK_KEY, blocked);
         renderBlocked();
         apply();
+        announce('已屏蔽 ' + term);
       }
       ui.bInput.value = '';
       ui.bInput.focus();
     };
 
-    const closePanel = () => {
-      if (!ui) return;
+    // v2.3：returnFocus 为 true（Esc 关闭）时把焦点还给「过滤」按钮；点空白处关闭时不抢焦点
+    const closePanel = (returnFocus) => {
+      if (!ui || ui.panel.hidden) return;
       ui.panel.hidden = true;
       ui.fab.setAttribute('aria-expanded', 'false');
+      if (returnFocus === true) ui.fab.focus();
     };
 
     const build = () => {
@@ -1502,8 +1590,9 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
       const wrap = document.createElement('div');
       wrap.className = 'sspai-tidy-fab-wrap';
       wrap.innerHTML =
-        '<button class="sspai-tidy-fab" type="button" aria-expanded="false" aria-label="过滤文章列表">过滤</button>' +
-        '<div class="sspai-tidy-panel" hidden aria-label="过滤与屏蔽">' +
+        '<button class="sspai-tidy-fab" type="button" aria-expanded="false" aria-controls="sspai-tidy-panel" aria-label="过滤文章列表">过滤</button>' +
+        // v2.3：没有 role 的 div 上的 aria-label 会被读屏忽略，补 role="group"
+        '<div class="sspai-tidy-panel" id="sspai-tidy-panel" role="group" hidden aria-label="过滤与屏蔽">' +
         '<label class="sspai-tidy-search">' +
         '<svg class="sspai-tidy-search-icon" width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">' +
         '<circle cx="7" cy="7" r="4.4" fill="none" stroke="currentColor" stroke-width="1.5"></circle>' +
@@ -1513,9 +1602,9 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
         '</label>' +
         '<div class="sspai-tidy-panel-foot">' +
         '<span class="sspai-tidy-filter-count"></span>' +
-        '<button class="sspai-tidy-filter-btn" type="button" aria-expanded="false">屏蔽</button>' +
+        '<button class="sspai-tidy-filter-btn" type="button" aria-expanded="false" aria-controls="sspai-tidy-blocked">屏蔽</button>' +
         '</div>' +
-        '<div class="sspai-tidy-blocked" hidden>' +
+        '<div class="sspai-tidy-blocked" id="sspai-tidy-blocked" hidden>' +
         '<div class="sspai-tidy-blocked-row">' +
         '<input class="sspai-tidy-blocked-input" type="text" placeholder="作者名或关键词" aria-label="要屏蔽的词">' +
         '<button class="sspai-tidy-blocked-add" type="button">添加</button>' +
@@ -1548,15 +1637,36 @@ ${CFG.hideRead ? `/* 已读直接从列表消失：配合「滚到底自动加�
       for (const el of [ui.input, ui.bInput]) {
         el.addEventListener('keydown', (e) => {
           e.stopPropagation();
+          // v2.3：输入法组字时的 Enter 是「上屏」—— 原来会把还没选字的拼音直接加进屏蔽名单
+          if (e.isComposing || e.keyCode === 229) return;
           if (e.key === 'Enter' && el === ui.bInput) addBlocked(ui.bInput.value);
-          if (e.key === 'Escape') { el.blur(); closePanel(); }
+          // v2.3：原来是 blur + 关闭，焦点掉到 <body>；现在关闭后回到「过滤」按钮
+          if (e.key === 'Escape') closePanel(true);
         });
       }
 
+      // v2.3：焦点在浮层里的按钮上（屏蔽 / 添加 / ×）或「过滤」按钮自己身上时，Esc 同样关闭。
+      // 原来只有两个输入框认 Esc。（输入框的按键已经 stopPropagation，不会走到这里两次）
+      for (const el of [ui.panel, ui.fab]) {
+        el.addEventListener('keydown', (e) => {
+          if (e.key !== 'Escape' || ui.panel.hidden) return;
+          e.stopPropagation();
+          closePanel(true);
+        });
+      }
+
+      let countTimer = 0;
       ui.input.addEventListener('input', () => {
         query = ui.input.value;
         apply();
         refreshLabel();
+        // v2.3：停手半秒后告诉读屏剩几篇（每敲一个字都念会很吵）
+        clearTimeout(countTimer);
+        countTimer = setTimeout(() => {
+          const cards = allCards();
+          const shown = cards.filter((c) => !c.classList.contains('sspai-tidy-hidden')).length;
+          announce(query.trim() ? '显示 ' + shown + ' 篇，共 ' + cards.length + ' 篇' : '已清空过滤');
+        }, 500);
       });
 
       ui.toggle.addEventListener('click', () => {
